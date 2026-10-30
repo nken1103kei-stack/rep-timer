@@ -166,10 +166,8 @@ function MenuRow({
 }) {
   const controls = useDragControls();
   const x = useMotionValue(0);
-  // A flick is not a tap: the drag that opens the log must not also select the menu.
+  // A flick is not a tap: the drag that deletes must not also open the menu.
   const dragged = useRef(false);
-  const logOpacity = useTransform(x, [12, SWIPE], [0, 1]);
-  const logScale = useTransform(x, [12, SWIPE], [0.6, 1.1]);
   const delOpacity = useTransform(x, [-SWIPE, -12], [1, 0]);
   const delScale = useTransform(x, [-SWIPE, -12], [1.1, 0.6]);
   const selected = useStore((s) => s.selectedExerciseId === ex.id);
@@ -177,6 +175,10 @@ function MenuRow({
   const last = useStore((s) => lastLogFor(s.logs, ex.id));
   const unit = useStore((s) => s.unit);
   const color = category(ex.category).color;
+  const open = () => {
+    selectExercise(ex.id);
+    onLog();
+  };
 
   return (
     <Reorder.Item
@@ -206,13 +208,7 @@ function MenuRow({
       }}
       className="relative list-none rounded-[22px]"
     >
-      <div className="absolute inset-0 flex items-center justify-between overflow-hidden rounded-[22px] px-5">
-        <motion.div
-          style={{ opacity: logOpacity, scale: logScale }}
-          className="flex items-center gap-1.5 font-bold text-go"
-        >
-          <NotebookPen size={20} /> 記録
-        </motion.div>
+      <div className="absolute inset-0 flex items-center justify-end overflow-hidden rounded-[22px] px-5">
         <motion.div
           style={{ opacity: delOpacity, scale: delScale }}
           className="flex items-center gap-1.5 font-bold text-danger"
@@ -230,7 +226,7 @@ function MenuRow({
         drag="x"
         dragDirectionLock
         dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={0.85}
+        dragElastic={{ left: 0.85, right: 0 }}
         dragSnapToOrigin={false}
         onPointerDown={() => (dragged.current = false)}
         onDragStart={() => (dragged.current = true)}
@@ -238,22 +234,21 @@ function MenuRow({
           if (info.offset.x < -SWIPE || info.velocity.x < -800) {
             haptic([10, 40, 10]);
             void animate(x, -480, { duration: 0.22 }).then(onDelete);
-          } else if (info.offset.x > SWIPE || info.velocity.x > 800) {
-            haptic(14);
-            void animate(x, 0, spring);
-            onLog();
           } else {
             void animate(x, 0, spring);
           }
         }}
+        // Tapping a menu selects it (the timer follows a cardio menu) and opens its input sheet.
         onTap={() => {
           if (dragged.current) return;
           haptic(8);
-          selectExercise(selected ? null : ex.id);
+          open();
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ")
-            selectExercise(selected ? null : ex.id);
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            open();
+          }
         }}
         whileTap={{ scale: 0.98 }}
         className={`glass sheen flex h-[76px] items-center gap-3 rounded-[22px] pr-1 pl-4 transition-[outline-color] ${
@@ -280,6 +275,9 @@ function MenuRow({
             {last && <span>· {formatDate(last.at)}</span>}
           </div>
         </div>
+        <span className="flex items-center gap-1 rounded-full bg-ink/5 px-2.5 py-1.5 text-xs font-bold text-ink/70">
+          <NotebookPen size={14} /> 入力
+        </span>
         <AnimatePresence>
           {selected && (
             <motion.span

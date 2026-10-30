@@ -1,20 +1,12 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-
-async function swipe(page: Page, target: Locator, dx: number) {
-  await target.scrollIntoViewIfNeeded();
-  const box = (await target.boundingBox())!;
-  const x = box.x + box.width / 2 - (dx > 0 ? 80 : -80);
-  const y = box.y + box.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  for (let i = 1; i <= 14; i++) {
-    await page.mouse.move(x + (dx * i) / 14, y);
-    await page.waitForTimeout(16);
-  }
-  await page.mouse.up();
-}
+import { expect, test, type Page } from "@playwright/test";
 
 const card = (page: Page, name: string) => page.locator(`[data-testid=menu-item][data-name="${name}"] [data-testid=menu-card]`);
+
+/** Tapping a menu selects it and opens its input sheet. */
+async function openMenu(page: Page, name: string) {
+  await card(page, name).click();
+  await expect(page.getByTestId("log-sheet")).toBeVisible();
+}
 const summary = (page: Page) => page.getByTestId("preset-summary").last();
 const closeSheet = (page: Page) => page.getByTestId("sheet-scrim").last().click({ position: { x: 20, y: 20 } });
 
@@ -65,7 +57,7 @@ test("free plan: a silent banner ad, and Pro features open the upgrade sheet", a
   await expect(page.getByTestId("preset-editor")).toBeHidden();
 
   // Set types, the rest timer and the 1RM graph are locked in the log sheet.
-  await swipe(page, card(page, "ベンチプレス"), 220);
+  await openMenu(page, "ベンチプレス");
   const log = page.getByTestId("log-sheet");
   await expect(log.getByTestId("e1rm-lock")).toBeVisible();
   await log.getByTestId("set-rest").first().click();
@@ -89,7 +81,7 @@ test("free plan: a silent banner ad, and Pro features open the upgrade sheet", a
 
 test("CSV export and import (Strong format) are free", async ({ page }) => {
   await seedMenus(page);
-  await swipe(page, card(page, "ベンチプレス"), 220);
+  await openMenu(page, "ベンチプレス");
   await page.getByTestId("log-save").click();
   await closeSheet(page);
 
@@ -129,7 +121,7 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   await expect(page.getByTestId("ad-slot")).toHaveCount(0);
 
   // Rest timer by set type, with the next set and plates visible while resting.
-  await swipe(page, card(page, "ベンチプレス"), 220);
+  await openMenu(page, "ベンチプレス");
   const log = page.getByTestId("log-sheet");
   await expect(log.getByTestId("e1rm-lock")).toHaveCount(0);
   await expect(log.getByTestId("e1rm-chart")).toBeVisible();
@@ -220,6 +212,37 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   await page.getByTestId("start-button").click();
   await expect(page.getByTestId("pro-sheet")).toBeVisible();
   await expect(page.getByTestId("timer-overlay")).toHaveCount(0);
+});
+
+test("the creator's account gets Pro for free, and Pro spots are marked with a crown", async ({ page }) => {
+  // Free users already see where Pro lives: crowns on the set type and rest buttons, and where each feature is.
+  await seedMenus(page);
+  await openMenu(page, "ベンチプレス");
+  expect(await page.getByTestId("log-sheet").getByTestId("pro-dot").count()).toBeGreaterThanOrEqual(2);
+  await closeSheet(page);
+  await page.getByTestId("pro-button").click();
+  await expect(page.getByTestId("pro-where")).toHaveCount(6);
+  await expect(page.getByTestId("pro-where").nth(1)).toContainText("記録画面");
+  await closeSheet(page);
+
+  // OWNER_EMAILS (a secret) lists the creator; that account is Pro without a subscription.
+  const login = await page.request.post("/api/dev/login", { data: { id: "e2e-owner", email: "owner@example.test" } });
+  test.skip(login.status() === 404, "test sign-in is only available locally");
+  await page.reload();
+  await expect(page.getByTestId("pro-button")).toHaveAttribute("data-pro", "true");
+  await expect(page.getByTestId("ad-slot")).toHaveCount(0);
+  await page.getByTestId("pro-button").click();
+  await expect(page.getByTestId("pro-active")).toHaveAttribute("data-owner", "true");
+  await expect(page.getByTestId("pro-active")).toContainText("製作者アカウント");
+  await expect(page.getByTestId("pro-manage")).toHaveCount(0);
+  await closeSheet(page);
+  await seedMenus(page);
+  await openMenu(page, "ベンチプレス");
+  await page.getByTestId("log-sheet").getByTestId("set-type").first().click();
+  await expect(page.getByTestId("log-sheet").getByTestId("set-type").first()).toHaveAttribute("data-type", "W");
+  await expect(page.getByTestId("pro-sheet")).toHaveCount(0);
+  // The server agrees: checkout is refused for an account that already has Pro.
+  expect((await page.request.post("/api/billing/checkout")).status()).toBe(409);
 });
 
 test("billing API guards", async ({ request, baseURL }) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPro, signStripePayload, verifyStripeSignature } from "../../worker/billing";
+import { isOwner, isPro, signStripePayload, verifyStripeSignature } from "../../worker/billing";
 import { exportCsv, importCsv, parseCsv } from "../../src/lib/csv";
 import { platesPerSide } from "../../src/lib/plates";
 import { buildSegments, totalMs, tutOf } from "../../src/lib/timer";
@@ -23,6 +23,13 @@ describe("stripe webhook signature", () => {
     expect(await verifyStripeSignature(body, header, secret, 1000 + 301)).toBe(false);
     expect(await verifyStripeSignature(body, null, secret, 1000)).toBe(false);
     expect(await verifyStripeSignature(body, "t=1000,v1=deadbeef", secret, 1000)).toBe(false);
+  });
+
+  it("recognises the creator's email from the comma-separated owner list", () => {
+    expect(isOwner("Owner@Example.test", " a@x.test, owner@example.test ")).toBe(true);
+    expect(isOwner("other@example.test", "owner@example.test")).toBe(false);
+    expect(isOwner("owner@example.test", undefined)).toBe(false);
+    expect(isOwner("", "")).toBe(false);
   });
 
   it("treats only active and trialing subscriptions as Pro", () => {

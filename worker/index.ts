@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { SESSION_COOKIE, SESSION_TTL_SEC, signSession, verifySession } from "./session";
-import { applyEvent, customerFor, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
+import { applyEvent, customerFor, isOwner, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
 
 type Env = BillingEnv & {
   GOOGLE_CLIENT_ID: string;
@@ -14,6 +14,8 @@ type Env = BillingEnv & {
   ADSENSE_SLOT?: string;
   /** Local testing only (.dev.vars): enables /api/dev/* on localhost. Never set in production. */
   DEV_MODE?: string;
+  /** Secret, comma-separated: these Google accounts (the creators) always get Pro for free. */
+  OWNER_EMAILS?: string;
 };
 
 type Vars = { userId: string };
@@ -105,7 +107,7 @@ app.get("/me", async (c) => {
     .bind(c.get("userId"))
     .first<{ id: string; email: string }>();
   if (!user) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ user, plan: await planFor(c.env.DB, user.id) });
+  return c.json({ user, plan: await planFor(c.env.DB, user.id, isOwner(user.email, c.env.OWNER_EMAILS)) });
 });
 
 // --- Billing (Stripe Checkout subscription + customer portal) ---
@@ -113,12 +115,13 @@ app.get("/me", async (c) => {
 app.post("/billing/checkout", async (c) => {
   const userId = c.get("userId");
   const origin = new URL(c.req.url).origin;
+  // Already Pro (paying or an owner): never start a second checkout.
+  const user = await c.env.DB.prepare("SELECT email FROM users WHERE id = ?1").bind(userId).first<{ email: string }>();
+  if ((await planFor(c.env.DB, userId, isOwner(user?.email, c.env.OWNER_EMAILS))).pro) return c.json({ error: "already_pro" }, 409);
   if (!billingReady(c.env)) {
     if (devMode(c)) return c.json({ url: "/api/dev/checkout" });
     return c.json({ error: "billing_not_configured" }, 503);
   }
-  if ((await planFor(c.env.DB, userId)).pro) return c.json({ error: "already_pro" }, 409);
-  const user = await c.env.DB.prepare("SELECT email FROM users WHERE id = ?1").bind(userId).first<{ email: string }>();
   const customer = await customerFor(c.env.DB, userId);
   const session = await stripe<{ url: string }>(c.env, "/checkout/sessions", {
     mode: "subscription",

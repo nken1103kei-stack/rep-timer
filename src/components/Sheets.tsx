@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
-import { Check, Download, Lock, LogOut, Pencil, Trash2, Upload } from "lucide-react";
+import { Check, Crown, Download, Lock, LogOut, Pencil, Trash2, Upload } from "lucide-react";
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
 import { exportCsv, importCsv } from "../lib/csv";
 import { CATEGORIES, DEFAULT_TEMPLATE, type CategoryId } from "../lib/catalog";
@@ -357,7 +357,7 @@ export function PresetEditor({ open, id, onClose }: { open: boolean; id: string 
             >
               {kind === k.id && <motion.span layoutId="kind-pill" transition={spring} className="absolute inset-0 rounded-xl bg-ink" />}
               <span className="relative">{k.label}</span>
-              {k.pro && !pro && <Lock size={11} className="relative text-mute" />}
+              {k.pro && (pro ? <Crown size={11} strokeWidth={3} className={`relative ${kind === k.id ? "text-[#ff9f0a]" : "text-accent"}`} /> : <Lock size={11} className="relative text-mute" />)}
             </button>
           ))}
         </div>
@@ -388,7 +388,7 @@ export function PresetEditor({ open, id, onClose }: { open: boolean; id: string 
               {(["下ろす", "止める", "挙げる", "締める"] as const).map((label, i) => (
                 <label key={label} className="glass flex flex-col items-center rounded-2xl py-2">
                   <span className="text-[10px] font-bold text-mute">{label}</span>
-                  <NumberInput label={label} value={form.tempo[i]} max={20} onChange={(v) => setTempo(i, v)} className="w-12 text-3xl" />
+                  <NumberInput label={label} value={form.tempo[i]} max={20} onChange={(v) => setTempo(i, v)} className="text-3xl" />
                   <span className="text-[10px] font-semibold text-mute">秒</span>
                 </label>
               ))}
@@ -585,7 +585,7 @@ function RestTimesSection() {
               value={restTimes[t]}
               max={1800}
               onChange={(v) => setRestTimes({ ...restTimes, [t]: v })}
-              className="w-16 text-2xl"
+              className="text-2xl"
             />
             <span className="text-[10px] font-semibold text-mute">秒</span>
           </label>

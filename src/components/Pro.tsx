@@ -57,13 +57,14 @@ export function ProLock({ children, label, testId }: { children: ReactNode; labe
   );
 }
 
+/** Each Pro feature with where it lives in the app; the same crown marks it on screen. */
 const FEATURES = [
-  { icon: Ban, title: "広告なし", text: "画面がすっきり。トレーニングに集中" },
-  { icon: Timer, title: "セット別の休憩タイマー", text: "W・N・D ごとに休憩時間が自動で切り替わり、休憩中も次のセットとプレートの組み合わせが見える" },
-  { icon: Layers, title: "スーパーセットタイマー", text: "種目A → 移動 → 種目B → 本休憩 の2段階を自動で進行" },
-  { icon: Metronome, title: "テンポ・メトロノーム", text: "下ろす・止める・挙げる・締めるを音と振動でカウント。TUT も記録" },
-  { icon: Flame, title: "部位ヒートマップ", text: "どこを鍛えて、どこをサボっているかが一目でわかる" },
-  { icon: Activity, title: "推定1RMグラフ", text: "種目ごとの最大挙上重量の伸びをグラフで確認" },
+  { icon: Ban, title: "広告なし", text: "画面がすっきり。トレーニングに集中", where: "メニュー一覧・カレンダー" },
+  { icon: Timer, title: "セット別の休憩タイマー", text: "W・N・D ごとに休憩時間が自動で切り替わり、休憩中も次のセットとプレートの組み合わせが見える", where: "記録画面の「SET」と ⏱ ボタン、設定の休憩時間" },
+  { icon: Layers, title: "スーパーセットタイマー", text: "種目A → 移動 → 種目B → 本休憩 の2段階を自動で進行", where: "タイマーの追加・編集 →「スーパーセット」" },
+  { icon: Metronome, title: "テンポ・メトロノーム", text: "下ろす・止める・挙げる・締めるを音と振動でカウント。TUT も記録", where: "タイマーの追加・編集 →「テンポ」" },
+  { icon: Flame, title: "部位ヒートマップ", text: "どこを鍛えて、どこをサボっているかが一目でわかる", where: "カレンダー" },
+  { icon: Activity, title: "推定1RMグラフ", text: "種目ごとの最大挙上重量の伸びをグラフで確認", where: "記録画面の上部" },
 ];
 
 export function ProSheet({ onLogin }: { onLogin: () => void }) {
@@ -104,13 +105,22 @@ export function ProSheet({ onLogin }: { onLogin: () => void }) {
               <span>
                 <span className="block text-sm font-bold">{f.title}</span>
                 <span className="block text-xs leading-relaxed text-mute">{f.text}</span>
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent" data-testid="pro-where">
+                  <Crown size={10} strokeWidth={3} /> {f.where}
+                </span>
               </span>
             </motion.li>
           ))}
         </ul>
-        <p className="text-center text-[11px] font-semibold text-mute">記録・履歴・カスタム種目・CSV の読み書きは無料のまま使えます</p>
+        <p className="text-center text-[11px] font-semibold text-mute">
+          画面では <Crown size={10} strokeWidth={3} className="inline text-accent" /> と <ProBadge /> の付いた所が Pro の機能です。記録・履歴・カスタム種目・CSV の読み書きは無料のまま使えます
+        </p>
 
-        {plan.pro ? (
+        {plan.status === "owner" ? (
+          <div className="glass flex items-center justify-center gap-2 rounded-2xl p-3 text-sm font-bold" data-testid="pro-active" data-owner="true">
+            <BadgeCheck size={18} className="text-go" /> 製作者アカウント · Pro をすべて利用中
+          </div>
+        ) : plan.pro ? (
           <>
             <div className="glass flex items-center justify-center gap-2 rounded-2xl p-3 text-sm font-bold" data-testid="pro-active">
               <BadgeCheck size={18} className="text-go" /> Pro を利用中

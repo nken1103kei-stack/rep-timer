@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { CATEGORIES, displayWeight, type CategoryId, type Unit } from "../lib/catalog";
 import { unitLabel } from "../lib/stats";
+import { ProBadge } from "./Pro";
 
 const color = (id: CategoryId) => CATEGORIES.find((c) => c.id === id)!.color;
 
@@ -85,7 +86,9 @@ export function E1rmChart({ points, unit }: { points: { at: number; value: numbe
   return (
     <div className="glass rounded-2xl p-3" data-testid="e1rm-chart" data-points={points.length}>
       <div className="flex items-baseline justify-between px-1">
-        <span className="text-xs font-bold text-mute">推定1RM</span>
+        <span className="flex items-center gap-1.5 text-xs font-bold text-mute">
+          推定1RM <ProBadge />
+        </span>
         <span className="font-display text-lg font-extrabold italic">
           {fmt(last)}
           <span className="ml-0.5 text-xs text-mute">{unitLabel(unit)}</span>

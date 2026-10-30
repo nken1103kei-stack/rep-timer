@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from "motion/react";
-import { Minus, Plus, Timer, X } from "lucide-react";
+import { Crown, Minus, Plus, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { haptic } from "../lib/feedback";
 import { useStore } from "../lib/store";
@@ -12,6 +12,32 @@ import { usePro } from "../lib/sync";
 import type { CardioForm } from "../lib/record";
 
 export const spring = { type: "spring", stiffness: 420, damping: 32 } as const;
+
+/**
+ * Height of the on-screen keyboard. iOS keeps the layout viewport when the keyboard opens,
+ * so a bottom sheet would sit underneath it; lifting the sheet by this much keeps it visible.
+ */
+function useKeyboardInset() {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return inset;
+}
+
+/** Brings a focused field to the middle of its scroll area once the keyboard has opened. */
+export function revealField(el: HTMLElement) {
+  for (const delay of [60, 350]) setTimeout(() => el.isConnected && el.scrollIntoView({ block: "center", behavior: "smooth" }), delay);
+}
 
 export function Sheet({
   open,
@@ -27,6 +53,7 @@ export function Sheet({
   testId?: string;
 }) {
   const controls = useDragControls();
+  const keyboard = useKeyboardInset();
   return (
     <AnimatePresence>
       {open && (
@@ -46,6 +73,8 @@ export function Sheet({
             aria-modal="true"
             data-testid={testId}
             className="glass-strong fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]"
+            style={keyboard ? { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 24px)` } : undefined}
+            data-keyboard={keyboard || undefined}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -71,6 +100,19 @@ export function Sheet({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+/** Small crown that marks a Pro-only control, shown on every plan so it is clear what Pro adds. */
+export function ProDot({ className = "" }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      data-testid="pro-dot"
+      className={`pointer-events-none absolute grid size-3.5 place-items-center rounded-full bg-gradient-to-br from-[#ff4f00] to-[#ff9f0a] text-white shadow-sm ${className}`}
+    >
+      <Crown size={8} strokeWidth={3} />
+    </span>
   );
 }
 
@@ -105,9 +147,12 @@ export function NumberInput({
       aria-label={label}
       data-testid={testId}
       value={text}
+      // Grows with the digits (plus room for the italic slant), so a long value is never clipped.
+      style={{ width: `${Math.max(2, text.length) + 0.9}ch` }}
       onFocus={(e) => {
         editing.current = true;
         e.target.select();
+        revealField(e.target);
       }}
       onChange={(e) => {
         const t = e.target.value.replace(/[^0-9.]/g, "");
@@ -120,7 +165,7 @@ export function NumberInput({
         setText(String(value));
       }}
       onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-      className={`bg-transparent text-center font-display font-bold italic outline-none ${className}`}
+      className={`min-w-0 rounded-lg bg-transparent px-0.5 text-center font-display font-bold italic outline-none focus:bg-white focus:text-accent focus:ring-2 focus:ring-accent ${className}`}
     />
   );
 }
@@ -169,7 +214,7 @@ export function Stepper({
             min={min}
             max={max}
             onChange={onChange}
-            className="w-20 rounded-lg text-3xl focus:bg-white/80"
+            className={String(value).length > 3 ? "text-2xl" : "text-3xl"}
           />
           {unit && <span className="text-xs font-semibold text-mute">{unit}</span>}
         </span>
@@ -318,8 +363,9 @@ export function SetRows({
                   if (!pro) openProSheet();
                   else update(i, { type: nextSetType(set.type ?? "N") });
                 }}
-                className="flex w-10 shrink-0 flex-col items-center leading-none"
+                className="relative flex w-10 shrink-0 flex-col items-center leading-none"
               >
+                <ProDot className="-bottom-1 right-0" />
                 <span className="font-display text-[11px] font-bold text-mute">SET {i + 1}</span>
                 <span
                   className="mt-0.5 rounded px-1 font-display text-[10px] font-extrabold text-white"
@@ -328,25 +374,25 @@ export function SetRows({
                   {SET_TYPE[set.type ?? "N"].short}
                 </span>
               </motion.button>
-              <label className="flex flex-1 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
+              <label className="flex min-w-0 flex-1 items-baseline justify-center gap-0.5 rounded-xl bg-white/70 py-1">
                 <NumberInput
                   label={`${i + 1}セット目の重量`}
                   value={displayWeight(set.weight, unit)}
                   max={unit === "kg" ? 500 : 1100}
                   onChange={(v) => update(i, { weight: fromUnit(v, unit) })}
-                  className="w-16 text-2xl"
+                  className="text-2xl"
                 />
                 <span className="text-xs font-semibold text-mute">{unitLabel(unit)}</span>
               </label>
               <span className="text-mute">×</span>
-              <label className="flex w-20 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
+              <label className="flex min-w-[4.25rem] shrink-0 items-baseline justify-center gap-0.5 rounded-xl bg-white/70 px-1 py-1">
                 <NumberInput
                   label={`${i + 1}セット目の回数`}
                   value={set.reps}
                   min={0}
                   max={999}
                   onChange={(reps) => update(i, { reps })}
-                  className="w-12 text-2xl"
+                  className="text-2xl"
                 />
                 <span className="text-xs font-semibold text-mute">回</span>
               </label>
@@ -357,8 +403,9 @@ export function SetRows({
                   aria-label={`${i + 1}セット目の後に休憩`}
                   data-testid="set-rest"
                   onClick={() => onRest(i)}
-                  className={`grid size-9 shrink-0 place-items-center rounded-full ${resting === i ? "bg-rest text-white" : "bg-rest/10 text-rest"}`}
+                  className={`relative grid size-9 shrink-0 place-items-center rounded-full ${resting === i ? "bg-rest text-white" : "bg-rest/10 text-rest"}`}
                 >
+                  <ProDot className="-top-1 -right-1" />
                   <Timer size={16} strokeWidth={2.4} />
                 </motion.button>
               )}

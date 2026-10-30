@@ -53,7 +53,18 @@ export async function stripe<T>(env: BillingEnv, path: string, params: Record<st
   return res.json() as Promise<T>;
 }
 
-export async function planFor(db: D1Database, userId: string): Promise<Plan> {
+/** Comma-separated owner emails (the app's creators), matched case-insensitively. */
+export const isOwner = (email: string | null | undefined, owners: string | undefined) =>
+  !!email &&
+  (owners ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(email.trim().toLowerCase());
+
+/** Owners get Pro without a subscription; everyone else needs an active or trialing one. */
+export async function planFor(db: D1Database, userId: string, owner = false): Promise<Plan> {
+  if (owner) return { pro: true, status: "owner", until: null };
   const row = await db
     .prepare("SELECT status, current_period_end FROM subscriptions WHERE user_id = ?1")
     .bind(userId)

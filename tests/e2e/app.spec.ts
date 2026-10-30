@@ -18,6 +18,14 @@ const summary = (page: Page) => page.getByTestId("preset-summary").last();
 
 const card = (page: Page, name: string) => page.locator(`[data-testid=menu-item][data-name="${name}"] [data-testid=menu-card]`);
 
+/** Tapping a menu selects it and opens its input sheet. */
+async function openMenu(page: Page, name: string) {
+  await card(page, name).click();
+  await expect(page.getByTestId("log-sheet")).toBeVisible();
+}
+
+const closeSheet = (page: Page) => page.getByTestId("sheet-scrim").last().click({ position: { x: 20, y: 20 } });
+
 const MENUS = [
   { id: "m1", name: "ベンチプレス", category: "chest", weight: 60, reps: 10, sets: 3 },
   { id: "m2", name: "スクワット", category: "legs", weight: 80, reps: 8, sets: 3 },
@@ -108,24 +116,71 @@ test("menus start empty and only appear after adding them with +", async ({ page
   await expect(card(page, "ベンチプレス")).toContainText("60kg × 10 × 3");
 });
 
-test("tap selects a menu; the timer shows the menu bar only for cardio", async ({ page }) => {
+test("tap selects a menu and opens its input; the timer shows the menu bar only for cardio", async ({ page }) => {
   await seedMenus(page);
   // Nothing selected: no placeholder bar.
   await expect(page.getByTestId("selected-menu")).toHaveCount(0);
   await expect(page.getByTestId("timer-panel")).not.toContainText("メニュー未選択");
 
-  await card(page, "ベンチプレス").click();
+  await openMenu(page, "ベンチプレス");
+  await expect(page.getByTestId("log-sheet")).toContainText("ベンチプレス");
+  await closeSheet(page);
   await expect(card(page, "ベンチプレス")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("selected-menu")).toHaveCount(0);
 
-  await card(page, "ランニング").click();
+  await openMenu(page, "ランニング");
+  await expect(page.getByTestId("log-sheet").getByTestId("cardio-fields")).toBeVisible();
+  await closeSheet(page);
   await expect(card(page, "ベンチプレス")).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByTestId("selected-menu")).toBeVisible();
   await expect(page.getByTestId("selected-menu")).toContainText("ランニング");
   await expect(page.getByTestId("selected-menu")).toContainText("30分");
 
-  await card(page, "ランニング").click();
+  await page.getByTestId("selected-menu").getByLabel("選択解除").click();
   await expect(page.getByTestId("selected-menu")).toHaveCount(0);
+});
+
+test("a right swipe no longer opens anything; only a tap does", async ({ page }) => {
+  await seedMenus(page);
+  await swipe(page, card(page, "スクワット"), 220);
+  await page.waitForTimeout(400);
+  await expect(page.getByTestId("log-sheet")).toHaveCount(0);
+  await expect(page.getByTestId("menu-item")).toHaveCount(4);
+  await expect(card(page, "スクワット")).toHaveAttribute("aria-pressed", "false");
+});
+
+test("typed numbers stay fully visible: inputs grow with the digits and the sheet clears the keyboard", async ({ page }) => {
+  await seedMenus(page);
+  await openMenu(page, "スクワット");
+  const sheet = page.getByTestId("log-sheet");
+  const weight = sheet.getByRole("textbox", { name: "1セット目の重量" });
+  const reps = sheet.getByRole("textbox", { name: "1セット目の回数" });
+  await weight.fill("497.5");
+  await reps.fill("999");
+  for (const input of [weight, reps]) {
+    const { scroll, client } = await input.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(scroll).toBeLessThanOrEqual(client);
+    // Not overlapped by the neighbouring controls either.
+    const box = (await input.boundingBox())!;
+    const row = (await sheet.getByTestId("set-row").first().boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(row.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(row.x + row.width);
+  }
+
+  // Simulate an on-screen keyboard covering the bottom 300px (iOS keeps the layout viewport).
+  await page.evaluate(() => {
+    const vv = window.visualViewport!;
+    Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - 300 });
+    vv.dispatchEvent(new Event("resize"));
+  });
+  await expect(sheet).toHaveAttribute("data-keyboard", "300");
+  const third = sheet.getByRole("textbox", { name: "3セット目の重量" });
+  await third.focus();
+  await page.waitForTimeout(700);
+  const box = (await third.boundingBox())!;
+  const visibleBottom = page.viewportSize()!.height - 300;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(visibleBottom);
 });
 
 const LIB_COUNTS: Record<string, number> = { shoulder: 6, chest: 7, back: 6, arms: 6, legs: 7, abs: 6, cardio: 7 };
@@ -204,7 +259,7 @@ test("menus are color-coded by body part", async ({ page }) => {
     await expect(card(page, name).locator("span").first()).toHaveCSS("background-color", color);
   }
   // Changing the body part in the editor recolors the menu.
-  await swipe(page, card(page, "デッドリフト"), 220);
+  await openMenu(page, "デッドリフト");
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor.getByTestId("category-option")).toHaveCount(8);
@@ -224,7 +279,7 @@ test("weights can be shown and entered in lbs", async ({ page }) => {
   await expect(page.getByTestId("account-sheet")).toBeHidden();
   await expect(card(page, "ベンチプレス")).toContainText("132.5lbs × 10 × 3");
 
-  await swipe(page, card(page, "ベンチプレス"), 220);
+  await openMenu(page, "ベンチプレス");
   const sheet = page.getByTestId("log-sheet");
   await expect(sheet.getByTestId("set-row")).toHaveCount(3);
   await expect(sheet.getByTestId("set-row").first()).toContainText("lbs");
@@ -245,7 +300,7 @@ test("weights can be shown and entered in lbs", async ({ page }) => {
 });
 
 async function logToday(page: Page, name: string) {
-  await swipe(page, card(page, name), 220);
+  await openMenu(page, name);
   await page.getByTestId("log-save").click();
   await expect(page.getByTestId("log-sheet").getByTestId("log-row").first()).toBeVisible();
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
@@ -344,8 +399,8 @@ test("share today's training and the monthly summary", async ({ page }) => {
 test("a cardio menu drives the timer with its work / rest minutes and sets", async ({ page }) => {
   await seedMenus(page);
   // Set 1 min work, 0 min rest, 2 sets on the menu by typing.
-  await swipe(page, card(page, "ランニング"), 220);
-  await expect(card(page, "ランニング")).toHaveAttribute("aria-pressed", "false");
+  await openMenu(page, "ランニング");
+  await expect(card(page, "ランニング")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor.getByTestId("cardio-fields")).toBeVisible();
@@ -356,8 +411,7 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   await expect(editor).toBeHidden();
   await expect(card(page, "ランニング")).toContainText("1分 × 2");
 
-  // Selecting it links the timer: summary in minutes, chips unselected.
-  await card(page, "ランニング").click();
+  // Selected, it links the timer: summary in minutes, chips unselected.
   await expect(card(page, "ランニング")).toHaveAttribute("aria-pressed", "true");
   await expect(summary(page)).toHaveAttribute("data-linked", "cardio");
   await expect(summary(page)).toContainText("WORK 分");
@@ -387,7 +441,7 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   await expect(overlay).toBeHidden();
 
   // With rest > 0 there is a REST phase between rounds.
-  await swipe(page, card(page, "ランニング"), 220);
+  await openMenu(page, "ランニング");
   const sheet = page.getByTestId("log-sheet");
   await expect(sheet.getByTestId("log-row")).toContainText("1分 × 2");
   await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("1");
@@ -409,9 +463,9 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   await expect(page.getByTestId("preset-chip").nth(1)).toHaveAttribute("aria-selected", "true");
 });
 
-test("flick right opens the log, records each set's weight and reps, and flick deletes a log row", async ({ page }) => {
+test("tapping a menu opens the log, records each set's weight and reps, and flick deletes a log row", async ({ page }) => {
   await seedMenus(page);
-  await swipe(page, card(page, "スクワット"), 220);
+  await openMenu(page, "スクワット");
   const sheet = page.getByTestId("log-sheet");
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText("スクワット");
@@ -434,7 +488,7 @@ test("flick right opens the log, records each set's weight and reps, and flick d
   // Next time starts from the last record's sets.
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
   await expect(sheet).toBeHidden();
-  await swipe(page, card(page, "スクワット"), 220);
+  await openMenu(page, "スクワット");
   await expect(sheet.getByRole("textbox", { name: "1セット目の重量" })).toHaveValue("85");
   await expect(sheet.getByRole("textbox", { name: "3セット目の重量" })).toHaveValue("82.5");
 
@@ -456,7 +510,7 @@ test("flick left deletes a menu and undo restores it", async ({ page }) => {
 
 test("edit a menu from the log sheet", async ({ page }) => {
   await seedMenus(page);
-  await swipe(page, card(page, "デッドリフト"), 220);
+  await openMenu(page, "デッドリフト");
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor).toBeVisible();
@@ -467,7 +521,7 @@ test("edit a menu from the log sheet", async ({ page }) => {
 
 test("a menu's default weight and reps are typed in per set", async ({ page }) => {
   await seedMenus(page);
-  await swipe(page, card(page, "デッドリフト"), 220);
+  await openMenu(page, "デッドリフト");
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor.getByTestId("set-row")).toHaveCount(3);
@@ -486,7 +540,7 @@ test("a menu's default weight and reps are typed in per set", async ({ page }) =
   // The record sheet starts from the planned sets, and the plan survives a reload.
   await page.reload();
   await expect(card(page, "デッドリフト")).toContainText(summary);
-  await swipe(page, card(page, "デッドリフト"), 220);
+  await openMenu(page, "デッドリフト");
   const sheet = page.getByTestId("log-sheet");
   await expect(sheet.getByTestId("set-row")).toHaveCount(4);
   await expect(sheet.getByRole("textbox", { name: "3セット目の重量" })).toHaveValue("120");
@@ -531,7 +585,8 @@ test("choose, edit and add interval timers", async ({ page }) => {
 
 test("runs the interval timer: ready, work, rest, pause, skip, done, record", async ({ page }) => {
   await seedMenus(page);
-  await card(page, "ベンチプレス").click();
+  await openMenu(page, "ベンチプレス");
+  await closeSheet(page);
   // Short timer: 5s work / 5s rest x 2.
   await page.getByTestId("preset-add").click();
   const editor = page.getByTestId("preset-editor");
@@ -575,7 +630,7 @@ test("runs the interval timer: ready, work, rest, pause, skip, done, record", as
   await page.getByTestId("record-save").click();
   await expect(overlay).toBeHidden();
 
-  await swipe(page, card(page, "ベンチプレス"), 220);
+  await openMenu(page, "ベンチプレス");
   await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
   await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toContainText("60kg × 10 × 2");
 });
@@ -594,7 +649,7 @@ test("data persists across reloads", async ({ page }) => {
   await page.locator("[data-testid=lib-tab][data-cat=legs]").click();
   await page.locator('[data-testid=lib-item][data-name="レッグプレス"]').click();
   await page.getByTestId("lib-submit").click();
-  await card(page, "レッグプレス").click();
+  await openMenu(page, "レッグプレス");
   await page.reload();
   await expect(card(page, "レッグプレス")).toBeVisible();
   await expect(card(page, "レッグプレス")).toHaveAttribute("aria-pressed", "true");
