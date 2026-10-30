@@ -5,13 +5,9 @@ import { guessCategory, isCategoryId, type CategoryId, type Unit } from "./catal
 
 export const uid = () => crypto.randomUUID().slice(0, 12);
 
+// Menus start empty: everything in the list is something the user added with "+".
 const seed = (): AppData => ({
-  exercises: [
-    { id: uid(), name: "ベンチプレス", category: "chest", weight: 60, reps: 10, sets: 3 },
-    { id: uid(), name: "スクワット", category: "legs", weight: 80, reps: 8, sets: 3 },
-    { id: uid(), name: "デッドリフト", category: "back", weight: 100, reps: 5, sets: 3 },
-    { id: uid(), name: "ランニング", category: "cardio", weight: 0, reps: 30, sets: 1 },
-  ],
+  exercises: [],
   logs: [],
   presets: [
     { id: uid(), name: "Tabata", work: 20, rest: 10, rounds: 8 },
@@ -27,9 +23,9 @@ const seed = (): AppData => ({
 /** Brings data from older app versions (local or synced) up to the current shape. */
 export function normalizeData(raw: Partial<AppData> & Record<string, unknown>): AppData {
   const exercises = (raw.exercises ?? []).map((e) => {
-    const { id, name, weight, reps, sets } = e as Exercise;
+    const { id, name, weight, reps, sets, rest } = e as Exercise;
     const category: CategoryId = isCategoryId((e as Exercise).category) ? (e as Exercise).category : guessCategory(name);
-    return { id, name, category, weight, reps, sets };
+    return category === "cardio" ? { id, name, category, weight, reps, sets, rest: rest ?? 0 } : { id, name, category, weight, reps, sets };
   });
   return {
     exercises,
@@ -53,6 +49,7 @@ type State = AppData & {
   restoreExercise: (exercise: Exercise, index: number) => void;
   purgeLogs: (exerciseId: string) => void;
   reorderExercises: (exercises: Exercise[]) => void;
+  /** Records today's sets; the menu's defaults follow the latest record. */
   addLog: (log: Omit<LogEntry, "id" | "at" | "name" | "category">) => void;
   removeLog: (id: string) => void;
   savePreset: (preset: Omit<Preset, "id"> & { id?: string }) => string;
@@ -114,7 +111,9 @@ export const useStore = create<State>()(
               logs: [{ ...log, id: uid(), at: Date.now(), name: ex?.name, category: ex?.category }, ...s.logs],
               // The latest record becomes the menu's default for next time.
               exercises: s.exercises.map((e) =>
-                e.id === log.exerciseId ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets } : e,
+                e.id === log.exerciseId
+                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, ...(e.category === "cardio" ? { rest: log.rest ?? 0 } : {}) }
+                  : e,
               ),
               ...touched(),
             };

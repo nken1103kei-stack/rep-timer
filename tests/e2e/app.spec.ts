@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function swipe(page: Page, target: Locator, dx: number) {
+  await target.scrollIntoViewIfNeeded();
   const box = (await target.boundingBox())!;
   const x = box.x + box.width / 2 - (dx > 0 ? 80 : -80);
   const y = box.y + box.height / 2;
@@ -16,6 +17,20 @@ async function swipe(page: Page, target: Locator, dx: number) {
 const summary = (page: Page) => page.getByTestId("preset-summary").last();
 
 const card = (page: Page, name: string) => page.locator(`[data-testid=menu-item][data-name="${name}"] [data-testid=menu-card]`);
+
+const MENUS = [
+  { id: "m1", name: "ベンチプレス", category: "chest", weight: 60, reps: 10, sets: 3 },
+  { id: "m2", name: "スクワット", category: "legs", weight: 80, reps: 8, sets: 3 },
+  { id: "m3", name: "デッドリフト", category: "back", weight: 100, reps: 5, sets: 3 },
+  { id: "m4", name: "ランニング", category: "cardio", weight: 0, reps: 30, sets: 1, rest: 0 },
+];
+
+/** Menus start empty; most tests begin from a few saved ones. */
+async function seedMenus(page: Page) {
+  await page.evaluate((exercises) => localStorage.setItem("rep-timer", JSON.stringify({ state: { exercises }, version: 2 })), MENUS);
+  await page.reload();
+  await expect(page.getByTestId("menu-item")).toHaveCount(4);
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -36,15 +51,34 @@ test("shows a full-screen skeleton, then menus and timers on the first screen", 
 
   // Both choices are above the fold without scrolling.
   const viewport = page.viewportSize()!;
-  for (const el of [page.getByTestId("preset-chip").first(), page.getByTestId("start-button"), page.getByTestId("menu-card").first()]) {
+  for (const el of [page.getByTestId("preset-chip").first(), page.getByTestId("start-button"), page.getByTestId("menu-add")]) {
     const box = (await el.boundingBox())!;
     expect(box.y + box.height).toBeLessThan(viewport.height);
   }
-  await expect(page.getByTestId("menu-item")).toHaveCount(4);
   await expect(page.getByTestId("preset-chip")).toHaveCount(5);
 });
 
+test("menus start empty and only appear after adding them with +", async ({ page }) => {
+  await expect(page.getByTestId("menu-item")).toHaveCount(0);
+  await expect(page.getByTestId("menu-list")).toBeAttached();
+  await expect(page.getByTestId("share-today")).toBeDisabled();
+  await page.reload();
+  await expect(page.getByTestId("menu-item")).toHaveCount(0);
+
+  await page.getByTestId("menu-add").click();
+  const sheet = page.getByTestId("library-sheet");
+  await sheet.locator("[data-testid=lib-tab][data-cat=chest]").click();
+  await sheet.locator('[data-testid=lib-item][data-name="ベンチプレス"]').click();
+  // Picking alone does not add anything yet.
+  await expect(page.getByTestId("menu-item")).toHaveCount(0);
+  await sheet.getByTestId("lib-submit").click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByTestId("menu-item")).toHaveCount(1);
+  await expect(card(page, "ベンチプレス")).toContainText("60kg × 10 × 3");
+});
+
 test("tap selects a menu; the timer shows the menu bar only for cardio", async ({ page }) => {
+  await seedMenus(page);
   // Nothing selected: no placeholder bar.
   await expect(page.getByTestId("selected-menu")).toHaveCount(0);
   await expect(page.getByTestId("timer-panel")).not.toContainText("メニュー未選択");
@@ -66,6 +100,7 @@ test("tap selects a menu; the timer shows the menu bar only for cardio", async (
 const LIB_COUNTS: Record<string, number> = { shoulder: 6, chest: 7, back: 6, arms: 6, legs: 7, abs: 6, cardio: 7 };
 
 test("+ opens a library with at least 5 picks for every body part", async ({ page }) => {
+  await seedMenus(page);
   await page.getByTestId("menu-add").click();
   const sheet = page.getByTestId("library-sheet");
   await expect(sheet).toBeVisible();
@@ -93,7 +128,7 @@ test("pick several library exercises across body parts and add them at once", as
   await expect(sheet.getByTestId("lib-submit")).toHaveText("3件をメニューに追加");
   await sheet.getByTestId("lib-submit").click();
   await expect(sheet).toBeHidden();
-  await expect(page.getByTestId("menu-item")).toHaveCount(7);
+  await expect(page.getByTestId("menu-item")).toHaveCount(3);
   await expect(page.locator('[data-testid=menu-item][data-name="サイドレイズ"]')).toHaveAttribute("data-cat", "shoulder");
   await expect(page.locator('[data-testid=menu-item][data-name="プランク"]')).toHaveAttribute("data-cat", "abs");
   await expect(card(page, "サイドレイズ")).toContainText("6kg × 15 × 3");
@@ -126,6 +161,7 @@ test("add your own exercise to a body part; it stays in that part's list", async
 });
 
 test("menus are color-coded by body part", async ({ page }) => {
+  await seedMenus(page);
   const expected: Record<string, [string, string]> = {
     ベンチプレス: ["胸", "rgb(255, 55, 95)"],
     スクワット: ["脚", "rgb(48, 209, 88)"],
@@ -149,6 +185,7 @@ test("menus are color-coded by body part", async ({ page }) => {
 });
 
 test("weights can be shown and entered in lbs", async ({ page }) => {
+  await seedMenus(page);
   await page.getByTestId("account-button").click();
   await page.getByTestId("unit-lb").click();
   await expect(page.getByTestId("unit-lb")).toHaveAttribute("aria-checked", "true");
@@ -158,9 +195,10 @@ test("weights can be shown and entered in lbs", async ({ page }) => {
 
   await swipe(page, card(page, "ベンチプレス"), 220);
   const sheet = page.getByTestId("log-sheet");
-  await expect(sheet.getByTestId("weight")).toContainText("lbs");
-  await sheet.getByLabel("重量を増やす").click();
-  await expect(sheet.getByRole("spinbutton", { name: "重量" })).toHaveValue("137.5");
+  await expect(sheet.getByTestId("set-row")).toHaveCount(3);
+  await expect(sheet.getByTestId("set-row").first()).toContainText("lbs");
+  await expect(sheet.getByRole("textbox", { name: "1セット目の重量" })).toHaveValue("132.5");
+  for (const n of [1, 2, 3]) await sheet.getByRole("textbox", { name: `${n}セット目の重量` }).fill("137.5");
   await sheet.getByTestId("log-save").click();
   await expect(sheet.getByTestId("log-row")).toContainText("137.5lbs × 10 × 3");
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
@@ -184,6 +222,7 @@ async function logToday(page: Page, name: string) {
 }
 
 test("calendar shows history by day with a monthly summary", async ({ page }) => {
+  await seedMenus(page);
   await logToday(page, "ベンチプレス");
   await logToday(page, "ランニング");
   await page.getByTestId("calendar-button").click();
@@ -241,18 +280,27 @@ test("share today's training and the monthly summary", async ({ page }) => {
     });
   });
   await page.reload();
+  await seedMenus(page);
+  await expect(page.getByTestId("share-today")).toBeDisabled();
   await logToday(page, "ベンチプレス");
+  await logToday(page, "ランニング");
 
+  // Straight from the menu screen.
+  await expect(page.getByTestId("today-count")).toHaveText("2");
+  await page.getByTestId("share-today").click();
   await page.getByTestId("calendar-button").click();
   await page.getByTestId("share-day").click();
   await page.getByTestId("share-month").click();
-  await expect.poll(() => page.evaluate(() => (window as unknown as { __shared: string[] }).__shared.length)).toBe(2);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __shared: string[] }).__shared.length)).toBe(3);
   const shared = await page.evaluate(() => (window as unknown as { __shared: string[] }).__shared);
   expect(shared[0]).toContain("のトレーニング");
   expect(shared[0]).toContain("・ベンチプレス（胸）60kg × 10 × 3");
-  expect(shared[1]).toMatch(/\d{4}年\d{1,2}月のトレーニング/);
-  expect(shared[1]).toContain("トレーニング日数 1日");
-  expect(shared[1]).toContain("総ボリューム 1.8t");
+  expect(shared[0]).toContain("・ランニング（有酸素）30分");
+  expect(shared[0]).toContain("合計 3セット / 1.8t / 有酸素 30分");
+  expect(shared[1]).toBe(shared[0]);
+  expect(shared[2]).toMatch(/\d{4}年\d{1,2}月のトレーニング/);
+  expect(shared[2]).toContain("トレーニング日数 1日");
+  expect(shared[2]).toContain("総ボリューム 1.8t");
 
   // Without the OS share sheet it falls back to the clipboard.
   await page.evaluate(() => Object.defineProperty(navigator, "share", { configurable: true, value: undefined }));
@@ -262,41 +310,111 @@ test("share today's training and the monthly summary", async ({ page }) => {
   expect(copied[0]).toContain("ベンチプレス");
 });
 
-test("cardio is recorded in minutes after the timer", async ({ page }) => {
-  await card(page, "ランニング").click();
-  await page.getByTestId("preset-chip").nth(3).click();
-  await page.getByTestId("start-button").click();
-  await expect(page.getByTestId("timer-overlay")).toContainText("ランニング");
-  await page.getByTestId("timer-skip").click();
-  await expect(page.getByTestId("timer-done")).toBeVisible();
-  await expect(page.getByTestId("timer-done").getByTestId("minutes")).toBeVisible();
-  await expect(page.getByTestId("timer-done").getByTestId("weight")).toHaveCount(0);
-  await page.getByTestId("record-save").click();
-  await expect(page.getByTestId("timer-overlay")).toBeHidden();
+test("a cardio menu drives the timer with its work / rest minutes and sets", async ({ page }) => {
+  await seedMenus(page);
+  // Set 1 min work, 0 min rest, 2 sets on the menu by typing.
   await swipe(page, card(page, "ランニング"), 220);
-  await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toContainText("1分");
+  await expect(card(page, "ランニング")).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId("log-edit").click();
+  const editor = page.getByTestId("menu-editor");
+  await expect(editor.getByTestId("cardio-fields")).toBeVisible();
+  await editor.getByRole("textbox", { name: "運動", exact: true }).fill("1");
+  await editor.getByRole("textbox", { name: "休憩", exact: true }).fill("0");
+  await editor.getByRole("textbox", { name: "セット", exact: true }).fill("2");
+  await editor.getByTestId("menu-save").click();
+  await expect(editor).toBeHidden();
+  await expect(card(page, "ランニング")).toContainText("1分 × 2");
+
+  // Selecting it links the timer: summary in minutes, chips unselected.
+  await card(page, "ランニング").click();
+  await expect(card(page, "ランニング")).toHaveAttribute("aria-pressed", "true");
+  await expect(summary(page)).toHaveAttribute("data-linked", "cardio");
+  await expect(summary(page)).toContainText("WORK 分");
+  await expect(summary(page)).toContainText("×2");
+  await expect(summary(page)).toContainText("TOTAL 2:00");
+  await expect(page.getByTestId("selected-menu")).toContainText("1分 × 2");
+
+  await page.getByTestId("start-button").click();
+  const overlay = page.getByTestId("timer-overlay");
+  await expect(overlay).toContainText("1分 / 休憩0分 × 2");
+  await expect(page.getByTestId("timer-phase")).toHaveText("READY");
+  await page.getByTestId("timer-skip").click();
+  await expect(page.getByTestId("timer-phase")).toHaveText("WORK");
+  await expect(page.getByTestId("timer-round")).toHaveText("1 / 2");
+  await expect(page.getByTestId("timer-clock")).toHaveText(/^(1:00|59|58)$/);
+  // Rest 0: straight into the next work round.
+  await page.getByTestId("timer-skip").click();
+  await expect(page.getByTestId("timer-phase")).toHaveText("WORK");
+  await expect(page.getByTestId("timer-round")).toHaveText("2 / 2");
+  await page.getByTestId("timer-skip").click();
+
+  const done = page.getByTestId("timer-done");
+  await expect(done.getByTestId("cardio-fields")).toBeVisible();
+  await expect(done.getByTestId("set-rows")).toHaveCount(0);
+  await expect(done.getByRole("textbox", { name: "運動", exact: true })).toHaveValue("1");
+  await page.getByTestId("record-save").click();
+  await expect(overlay).toBeHidden();
+
+  // With rest > 0 there is a REST phase between rounds.
+  await swipe(page, card(page, "ランニング"), 220);
+  const sheet = page.getByTestId("log-sheet");
+  await expect(sheet.getByTestId("log-row")).toContainText("1分 × 2");
+  await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("1");
+  await sheet.getByTestId("log-save").click();
+  await expect(sheet.getByTestId("log-row").first()).toContainText("1分 × 2（休憩1分）");
+  await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
+  await expect(summary(page)).toContainText("TOTAL 3:00");
+  await page.getByTestId("start-button").click();
+  await page.getByTestId("timer-skip").click();
+  await page.getByTestId("timer-skip").click();
+  await expect(page.getByTestId("timer-phase")).toHaveText("REST");
+  await page.getByTestId("timer-close").click();
+  await expect(overlay).toBeHidden();
+
+  // Tapping a timer chip unlinks the cardio menu.
+  await page.getByTestId("preset-chip").nth(1).click();
+  await expect(card(page, "ランニング")).toHaveAttribute("aria-pressed", "false");
+  await expect(summary(page)).not.toHaveAttribute("data-linked", "cardio");
+  await expect(page.getByTestId("preset-chip").nth(1)).toHaveAttribute("aria-selected", "true");
 });
 
-test("flick right opens the log, records a set, and flick deletes a log row", async ({ page }) => {
+test("flick right opens the log, records each set's weight and reps, and flick deletes a log row", async ({ page }) => {
+  await seedMenus(page);
   await swipe(page, card(page, "スクワット"), 220);
   const sheet = page.getByTestId("log-sheet");
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText("スクワット");
-  await sheet.getByLabel("重量を増やす").click();
+  await expect(sheet.getByTestId("set-row")).toHaveCount(3);
+
+  // Each set takes its own typed weight and reps.
+  await sheet.getByRole("textbox", { name: "2セット目の重量" }).fill("85");
+  await sheet.getByRole("textbox", { name: "2セット目の回数" }).fill("6");
+  await sheet.getByTestId("set-add").click();
+  await expect(sheet.getByTestId("set-row")).toHaveCount(4);
+  await expect(sheet.getByRole("textbox", { name: "4セット目の重量" })).toHaveValue("80");
+  await sheet.getByRole("textbox", { name: "4セット目の重量" }).fill("82.5");
+  await sheet.getByLabel("1セット目を削除").click();
+  await expect(sheet.getByTestId("set-row")).toHaveCount(3);
   await sheet.getByTestId("log-save").click();
   await expect(sheet.getByTestId("log-row")).toHaveCount(1);
-  await expect(sheet.getByTestId("log-row")).toContainText("82.5kg × 8 × 3");
-  await expect(sheet).toContainText("82.5kg");
+  await expect(sheet.getByTestId("log-row")).toContainText("85kg×6 / 80kg×8 / 82.5kg×8");
+  await expect(sheet).toContainText("85kg");
+
+  // Next time starts from the last record's sets.
+  await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
+  await expect(sheet).toBeHidden();
+  await swipe(page, card(page, "スクワット"), 220);
+  await expect(sheet.getByRole("textbox", { name: "1セット目の重量" })).toHaveValue("85");
+  await expect(sheet.getByRole("textbox", { name: "3セット目の重量" })).toHaveValue("82.5");
 
   await swipe(page, sheet.getByTestId("log-row").first(), -220);
   await expect(sheet.getByTestId("log-row")).toHaveCount(0);
-
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
   await expect(sheet).toBeHidden();
-  await expect(card(page, "スクワット")).toContainText("82.5kg × 8 × 3");
 });
 
 test("flick left deletes a menu and undo restores it", async ({ page }) => {
+  await seedMenus(page);
   await swipe(page, card(page, "デッドリフト"), -240);
   await expect(page.getByTestId("menu-item")).toHaveCount(3);
   await expect(page.getByTestId("toast")).toContainText("デッドリフトを削除");
@@ -306,6 +424,7 @@ test("flick left deletes a menu and undo restores it", async ({ page }) => {
 });
 
 test("edit a menu from the log sheet", async ({ page }) => {
+  await seedMenus(page);
   await swipe(page, card(page, "デッドリフト"), 220);
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
@@ -316,6 +435,7 @@ test("edit a menu from the log sheet", async ({ page }) => {
 });
 
 test("drag the grip to reorder menus", async ({ page }) => {
+  await seedMenus(page);
   const grip = page.locator('[data-testid=menu-item][data-name="ランニング"] [data-testid=menu-grip]');
   const box = (await grip.boundingBox())!;
   const first = (await page.getByTestId("menu-item").first().boundingBox())!;
@@ -351,13 +471,14 @@ test("choose, edit and add interval timers", async ({ page }) => {
 });
 
 test("runs the interval timer: ready, work, rest, pause, skip, done, record", async ({ page }) => {
+  await seedMenus(page);
   await card(page, "ベンチプレス").click();
   // Short timer: 5s work / 5s rest x 2.
   await page.getByTestId("preset-add").click();
   const editor = page.getByTestId("preset-editor");
-  await editor.getByRole("spinbutton", { name: "WORK", exact: true }).fill("5");
-  await editor.getByRole("spinbutton", { name: "REST", exact: true }).fill("5");
-  await editor.getByRole("spinbutton", { name: "セット数", exact: true }).fill("2");
+  await editor.getByRole("textbox", { name: "WORK", exact: true }).fill("5");
+  await editor.getByRole("textbox", { name: "REST", exact: true }).fill("5");
+  await editor.getByRole("textbox", { name: "セット数", exact: true }).fill("2");
   await editor.getByTestId("preset-save").click();
   await expect(editor).toBeHidden();
 

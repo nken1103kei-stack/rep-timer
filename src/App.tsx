@@ -4,6 +4,7 @@ import { Undo2 } from "lucide-react";
 import { useStore } from "./lib/store";
 import { bootstrap, useSession } from "./lib/sync";
 import { unlockAudio } from "./lib/feedback";
+import { cardioTimer } from "./lib/record";
 import type { Exercise, Preset } from "./lib/types";
 import { Skeleton } from "./components/Skeleton";
 import { Header } from "./components/Header";
@@ -42,6 +43,11 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
+  const onShared = (r: string) => {
+    if (r === "copied") showToast({ text: "クリップボードにコピーしました" });
+    else if (r === "failed") showToast({ text: "共有できませんでした" });
+  };
+
   const showToast = (t: Omit<Toast, "id">) => {
     clearTimeout(toastTimer.current);
     toast?.expire?.();
@@ -66,8 +72,11 @@ export default function App() {
   const start = () => {
     unlockAudio();
     const s = useStore.getState();
-    const preset = s.presets.find((p) => p.id === s.selectedPresetId) ?? s.presets[0];
-    setRun({ preset, exercise: s.exercises.find((e) => e.id === s.selectedExerciseId) ?? null });
+    const exercise = s.exercises.find((e) => e.id === s.selectedExerciseId) ?? null;
+    // A selected cardio menu drives the timer with its own work/rest/sets.
+    const preset =
+      exercise?.category === "cardio" ? cardioTimer(exercise) : (s.presets.find((p) => p.id === s.selectedPresetId) ?? s.presets[0]);
+    setRun({ preset, exercise });
   };
 
   const close = () => setSheet(null);
@@ -97,6 +106,7 @@ export default function App() {
                 onAdd={() => setSheet({ type: "library" })}
                 onLog={(id) => setSheet({ type: "log", id })}
                 onDelete={deleteExercise}
+                onShared={onShared}
               />,
             ].map((child) => (
               <motion.div
@@ -128,10 +138,7 @@ export default function App() {
           <CalendarView
             key="calendar"
             onClose={() => setCalendarOpen(false)}
-            onShared={(r) => {
-              if (r === "copied") showToast({ text: "クリップボードにコピーしました" });
-              else if (r === "failed") showToast({ text: "共有できませんでした" });
-            }}
+            onShared={onShared}
           />
         )}
       </AnimatePresence>

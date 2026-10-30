@@ -1,6 +1,12 @@
 import type { CategoryId, Unit } from "./catalog";
 
-/** Weights are always stored in kg. For cardio, `reps` is minutes and `sets` is 1. */
+/** One performed set. Weight is kg. */
+export type SetEntry = { weight: number; reps: number };
+
+/**
+ * Weights are always stored in kg.
+ * For cardio, `reps` is the work minutes per round, `rest` the rest minutes (0 allowed), `sets` the rounds.
+ */
 export type Exercise = {
   id: string;
   name: string;
@@ -8,6 +14,7 @@ export type Exercise = {
   weight: number;
   reps: number;
   sets: number;
+  rest?: number;
 };
 
 export type LogEntry = {
@@ -17,6 +24,9 @@ export type LogEntry = {
   weight: number;
   reps: number;
   sets: number;
+  /** Per-set weight and reps for strength work; `weight`/`reps` mirror the first set. */
+  detail?: SetEntry[];
+  rest?: number;
   /** Snapshot so the calendar still reads correctly after a rename or delete. */
   name?: string;
   category?: CategoryId;

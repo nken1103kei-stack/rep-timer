@@ -6,6 +6,8 @@ import type { Preset } from "../lib/types";
 import { haptic } from "../lib/feedback";
 import { spring } from "./ui";
 import { category } from "../lib/catalog";
+import { cardioTimer } from "../lib/record";
+import { formatSet } from "../lib/stats";
 
 export const presetLabel = (p: Preset) =>
   p.work === 0 ? formatDuration(p.rest * 1000) : `${p.work}/${p.rest}`;
@@ -18,13 +20,15 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
   const selectExercise = useStore((s) => s.selectExercise);
   const cardio = exercise?.category === "cardio" ? exercise : null;
   const preset = presets.find((p) => p.id === selectedPresetId) ?? presets[0];
-  const total = totalMs(buildSegments({ prepare: 0, ...preset }));
+  // A selected cardio menu takes over the timer with its own work/rest/sets.
+  const timer = cardio ? cardioTimer(cardio) : preset;
+  const total = totalMs(buildSegments({ prepare: 0, ...timer }));
 
   return (
     <section className="glass sheen rounded-[28px] p-4" data-testid="timer-panel">
       <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="tablist" aria-label="タイマー">
         {presets.map((p) => {
-          const active = p.id === preset.id;
+          const active = !cardio && p.id === preset.id;
           return (
             <motion.button
               key={p.id}
@@ -35,13 +39,16 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
               whileTap={{ scale: 0.92 }}
               onClick={() => {
                 haptic(8);
-                // Tapping the active chip again opens its editor.
+                // Tapping the active chip again opens its editor; any chip unlinks a cardio menu.
                 if (active) onEditPreset(p.id);
-                else selectPreset(p.id);
+                else {
+                  if (cardio) selectExercise(null);
+                  selectPreset(p.id);
+                }
               }}
-              className={`relative h-10 shrink-0 rounded-full px-4 text-sm font-bold whitespace-nowrap transition-colors ${
+              className={`relative h-10 shrink-0 rounded-full px-4 text-sm font-bold whitespace-nowrap transition-[colors,opacity] ${
                 active ? "text-white" : "bg-white/60 text-ink"
-              }`}
+              } ${cardio ? "opacity-45" : ""}`}
             >
               {active && (
                 <motion.span
@@ -71,14 +78,21 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
       <div className="mt-4 flex items-center justify-between gap-3">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
-            key={preset.id + preset.work + preset.rest + preset.rounds}
+            key={timer.id + timer.work + timer.rest + timer.rounds}
             initial={{ opacity: 0, y: 14, filter: "blur(4px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, y: -14, filter: "blur(4px)" }}
             transition={{ duration: 0.25 }}
             data-testid="preset-summary"
+            data-linked={cardio ? "cardio" : undefined}
           >
-            {preset.work === 0 ? (
+            {cardio ? (
+              <div className="flex items-end gap-3">
+                <Big value={cardio.reps} label="WORK 分" color="text-accent" />
+                <Big value={cardio.rest ?? 0} label="REST 分" color="text-rest" />
+                <Big value={`×${timer.rounds}`} label="SETS" color="text-ink" />
+              </div>
+            ) : preset.work === 0 ? (
               <Big value={formatDuration(preset.rest * 1000)} label="REST" color="text-rest" />
             ) : (
               <div className="flex items-end gap-3">
@@ -132,7 +146,7 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
                   className="min-w-0 flex-1 truncate text-sm font-semibold"
                 >
                   {cardio.name}
-                  <span className="ml-2 text-mute">{cardio.reps}分</span>
+                  <span className="ml-2 text-mute">{formatSet(cardio, "kg")}</span>
                 </motion.span>
               </AnimatePresence>
               <button type="button" aria-label="選択解除" onClick={() => selectExercise(null)} className="text-mute">

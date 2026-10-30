@@ -1,14 +1,31 @@
 import { category, CATEGORIES, displayWeight, toUnit, type CategoryId, type Unit } from "./catalog";
-import type { Exercise, LogEntry } from "./types";
+import type { Exercise, LogEntry, SetEntry } from "./types";
 
-type SetLike = { category: CategoryId; weight: number; reps: number; sets: number };
+type SetLike = { category: CategoryId; weight: number; reps: number; sets: number; detail?: SetEntry[]; rest?: number };
+
+/** The individual sets of a log or menu (older logs only stored one weight/reps for all sets). */
+export const setsOf = (s: SetLike): SetEntry[] =>
+  s.detail?.length ? s.detail : Array.from({ length: Math.max(1, s.sets) }, () => ({ weight: s.weight, reps: s.reps }));
+
+export const volumeOf = (s: SetLike) => (s.category === "cardio" ? 0 : setsOf(s).reduce((m, x) => m + x.weight * x.reps, 0));
+
+export const cardioMinutes = (s: SetLike) => s.reps * Math.max(1, s.sets);
 
 export const unitLabel = (unit: Unit) => (unit === "kg" ? "kg" : "lbs");
 
 export const formatWeight = (kg: number, unit: Unit) => (kg === 0 ? "自重" : `${displayWeight(kg, unit)}${unitLabel(unit)}`);
 
-export const formatSet = (s: SetLike, unit: Unit) =>
-  s.category === "cardio" ? `${s.reps}分` : `${formatWeight(s.weight, unit)} × ${s.reps} × ${s.sets}`;
+export function formatSet(s: SetLike, unit: Unit) {
+  if (s.category === "cardio") {
+    const rest = s.rest ?? 0;
+    if (s.sets <= 1 && rest === 0) return `${s.reps}分`;
+    return `${s.reps}分 × ${s.sets}${rest ? `（休憩${rest}分）` : ""}`;
+  }
+  const list = setsOf(s);
+  const uniform = list.every((x) => x.weight === list[0].weight && x.reps === list[0].reps);
+  if (uniform) return `${formatWeight(list[0].weight, unit)} × ${list[0].reps} × ${list.length}`;
+  return list.map((x) => `${formatWeight(x.weight, unit)}×${x.reps}`).join(" / ");
+}
 
 export function formatVolume(kg: number, unit: Unit) {
   if (unit === "lb") return `${Math.round(toUnit(kg, "lb")).toLocaleString("en-US")}lbs`;
@@ -59,10 +76,10 @@ export function summarize(logs: ResolvedLog[]): Summary {
   let cardioMin = 0;
   for (const l of logs) {
     counts.set(l.category, (counts.get(l.category) ?? 0) + 1);
-    if (l.category === "cardio") cardioMin += l.reps;
+    if (l.category === "cardio") cardioMin += cardioMinutes(l);
     else {
-      sets += l.sets;
-      volumeKg += l.weight * l.reps * l.sets;
+      sets += setsOf(l).length;
+      volumeKg += volumeOf(l);
     }
   }
   return {

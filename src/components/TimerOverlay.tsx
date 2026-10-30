@@ -5,7 +5,8 @@ import { useStore } from "../lib/store";
 import { buildSegments, formatClock, formatDuration, segmentStart, timerAt, type Phase } from "../lib/timer";
 import type { Exercise, Preset } from "../lib/types";
 import { beep, haptic, keepAwake } from "../lib/feedback";
-import { PrimaryButton, SetFields, spring } from "./ui";
+import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
+import { initialRecord, toLog } from "../lib/record";
 
 const PHASE: Record<Phase, { label: string; color: string; tint: string }> = {
   prepare: { label: "READY", color: "#FFB800", tint: "rgb(255 184 0 / 0.28)" },
@@ -110,7 +111,11 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
           <div className="min-w-0">
             <div className="truncate text-sm font-bold">{exercise?.name ?? preset.name}</div>
             <div className="font-display text-xs font-semibold text-mute">
-              {preset.work > 0 ? `${preset.work}/${preset.rest} × ${preset.rounds}` : `REST ${formatDuration(preset.rest * 1000)}`}
+              {exercise?.category === "cardio"
+                ? `${preset.work / 60}分 / 休憩${preset.rest / 60}分 × ${preset.rounds}`
+                : preset.work > 0
+                  ? `${preset.work}/${preset.rest} × ${preset.rounds}`
+                  : `REST ${formatDuration(preset.rest * 1000)}`}
             </div>
           </div>
           <motion.button
@@ -228,13 +233,12 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
 
 function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise | null; preset: Preset; totalMs: number; onClose: () => void }) {
   const addLog = useStore((s) => s.addLog);
+  const lastLog = useStore((s) => s.logs.find((l) => l.exerciseId === exercise?.id));
   const cardio = exercise?.category === "cardio";
-  const [form, setForm] = useState({
-    weight: exercise?.weight ?? 0,
-    // Cardio records the minutes actually spent on the timer.
-    reps: cardio ? Math.max(1, Math.round(totalMs / 60000)) : (exercise?.reps ?? 10),
-    sets: cardio ? 1 : exercise ? (preset.work > 0 ? preset.rounds : exercise.sets) : 1,
-  });
+  // Interval rounds become sets; a cardio menu's own timer settings are the record.
+  const [form, setForm] = useState(() =>
+    exercise ? initialRecord(exercise, lastLog, !cardio && preset.work > 0 ? preset.rounds : undefined) : null,
+  );
   return (
     <motion.div
       className="flex flex-1 flex-col"
@@ -255,14 +259,19 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
         <div className="mt-4 font-display text-5xl font-extrabold italic">DONE</div>
         <div className="font-display text-lg font-semibold text-mute">{formatDuration(totalMs)}</div>
       </div>
-      <div className="mt-auto space-y-3">
+      <div className="no-scrollbar mt-auto -mx-1 max-h-[58dvh] space-y-3 overflow-y-auto px-1 pt-4">
         {exercise && (
           <>
-            <SetFields category={exercise.category} form={form} onChange={setForm} />
+            {form &&
+              (cardio ? (
+                <CardioFields value={form.cardio} onChange={(c) => setForm({ ...form, cardio: c })} />
+              ) : (
+                <SetRows sets={form.sets} onChange={(sets) => setForm({ ...form, sets })} />
+              ))}
             <PrimaryButton
               testId="record-save"
               onClick={() => {
-                addLog({ exerciseId: exercise.id, ...form });
+                if (form) addLog(toLog(exercise, form));
                 onClose();
               }}
             >

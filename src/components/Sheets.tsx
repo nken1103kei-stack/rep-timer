@@ -3,12 +3,13 @@ import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
 import { Check, LogOut, Pencil, Trash2 } from "lucide-react";
 import { useStore } from "../lib/store";
 import { CATEGORIES, DEFAULT_TEMPLATE, type CategoryId } from "../lib/catalog";
-import { formatDate, formatSet, formatVolume, formatWeight } from "../lib/stats";
+import { cardioMinutes, formatDate, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
+import { initialRecord, toLog, type RecordForm } from "../lib/record";
 import { signInWithGoogle, signOut, useSession } from "../lib/sync";
 import { buildSegments, formatDuration, totalMs } from "../lib/timer";
 import type { Exercise, LogEntry } from "../lib/types";
 import { haptic } from "../lib/feedback";
-import { CategoryBadge, PrimaryButton, SetFields, Sheet, spring, Stepper } from "./ui";
+import { CardioFields, CategoryBadge, PrimaryButton, SetFields, SetRows, Sheet, spring, Stepper } from "./ui";
 
 const inputClass =
   "glass h-13 w-full rounded-2xl px-4 text-base font-semibold outline-none placeholder:text-slate-400 focus:outline-2 focus:outline-accent";
@@ -94,19 +95,20 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
   const logs = useStore((s) => s.logs);
   const unit = useStore((s) => s.unit);
   const addLog = useStore((s) => s.addLog);
-  const [form, setForm] = useState({ weight: 0, reps: 0, sets: 0 });
+  const [form, setForm] = useState<RecordForm>({ sets: [], cardio: { reps: 0, rest: 0, sets: 1 } });
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (exercise) setForm({ weight: exercise.weight, reps: exercise.reps, sets: exercise.sets });
+    if (exercise) setForm(initialRecord(exercise, logs.find((l) => l.exerciseId === exercise.id)));
     setSaved(false);
     // Only reset when a different menu is opened, not after each record.
   }, [id]);
 
   const history = logs.filter((l) => l.exerciseId === id);
-  const best = history.reduce((m, l) => Math.max(m, l.weight), 0);
-  const volume = history.reduce((sum, l) => sum + l.weight * l.reps * l.sets, 0);
   const cardio = exercise?.category === "cardio";
+  const typed = history.map((l) => ({ ...l, category: exercise?.category ?? "other" }) as const);
+  const best = typed.reduce((m, l) => Math.max(m, ...setsOf(l).map((x) => x.weight)), 0);
+  const volume = typed.reduce((sum, l) => sum + volumeOf(l), 0);
 
   return (
     <Sheet
@@ -136,23 +138,27 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
         <div className="space-y-3 pt-1">
           <div className="grid grid-cols-3 gap-2">
             {cardio ? (
-              <Stat label="最長" value={history.length ? `${Math.max(...history.map((l) => l.reps))}分` : "–"} />
+              <Stat label="最長" value={history.length ? `${Math.max(...typed.map(cardioMinutes))}分` : "–"} />
             ) : (
               <Stat label="ベスト" value={best ? formatWeight(best, unit) : "–"} />
             )}
             <Stat label="記録" value={`${history.length}`} />
             {cardio ? (
-              <Stat label="合計時間" value={history.length ? `${history.reduce((m, l) => m + l.reps, 0)}分` : "–"} />
+              <Stat label="合計時間" value={history.length ? `${typed.reduce((m, l) => m + cardioMinutes(l), 0)}分` : "–"} />
             ) : (
               <Stat label="総ボリューム" value={volume ? formatVolume(volume, unit) : "–"} />
             )}
           </div>
-          <SetFields category={exercise.category} form={form} onChange={setForm} />
+          {cardio ? (
+            <CardioFields value={form.cardio} onChange={(c) => setForm({ ...form, cardio: c })} />
+          ) : (
+            <SetRows sets={form.sets} onChange={(sets) => setForm({ ...form, sets })} />
+          )}
           <PrimaryButton
             testId="log-save"
             tone={saved ? "ink" : "accent"}
             onClick={() => {
-              addLog({ exerciseId: exercise.id, ...form });
+              addLog(toLog(exercise, form));
               setSaved(true);
               setTimeout(() => setSaved(false), 1200);
             }}

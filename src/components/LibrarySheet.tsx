@@ -66,7 +66,7 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
   };
 
   const submit = () => {
-    addExercises([...picked.values()].map(({ name, category, weight, reps, sets }) => ({ name, category, weight, reps, sets })));
+    addExercises([...picked.values()].map(({ name, category, weight, reps, sets, rest }) => ({ name, category, weight, reps, sets, ...(category === "cardio" ? { rest: rest ?? 0 } : {}) })));
     onClose();
   };
 

@@ -17,9 +17,9 @@ const byId = Object.fromEntries(CATEGORIES.map((c) => [c.id, c])) as Record<Cate
 export const category = (id: CategoryId | undefined) => byId[id ?? "other"] ?? byId.other;
 export const isCategoryId = (v: unknown): v is CategoryId => typeof v === "string" && v in byId;
 
-export type Template = { name: string; weight: number; reps: number; sets: number };
+export type Template = { name: string; weight: number; reps: number; sets: number; rest?: number };
 
-/** Weights are kg. For cardio, `reps` holds minutes. */
+/** Weights are kg. For cardio, `reps` is work minutes, `rest` rest minutes and `sets` rounds. */
 export const LIBRARY: Record<Exclude<CategoryId, "other">, Template[]> = {
   shoulder: [
     { name: "ショルダープレス", weight: 30, reps: 10, sets: 3 },
@@ -83,7 +83,7 @@ export const LIBRARY: Record<Exclude<CategoryId, "other">, Template[]> = {
 };
 
 export const DEFAULT_TEMPLATE = (cat: CategoryId): Template =>
-  cat === "cardio" ? { name: "", weight: 0, reps: 30, sets: 1 } : { name: "", weight: 20, reps: 10, sets: 3 };
+  cat === "cardio" ? { name: "", weight: 0, reps: 30, sets: 1, rest: 0 } : { name: "", weight: 20, reps: 10, sets: 3 };
 
 /** Best-effort category for menus created before categories existed. */
 export function guessCategory(name: string): CategoryId {

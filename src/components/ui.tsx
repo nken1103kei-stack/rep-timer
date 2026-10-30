@@ -1,10 +1,12 @@
 import { AnimatePresence, motion, useDragControls } from "motion/react";
-import { Minus, Plus } from "lucide-react";
-import type { ReactNode } from "react";
+import { Minus, Plus, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { haptic } from "../lib/feedback";
 import { useStore } from "../lib/store";
 import { category, displayWeight, fromUnit, type CategoryId } from "../lib/catalog";
 import { unitLabel } from "../lib/stats";
+import type { SetEntry } from "../lib/types";
+import type { CardioForm } from "../lib/record";
 
 export const spring = { type: "spring", stiffness: 420, damping: 32 } as const;
 
@@ -69,6 +71,57 @@ export function Sheet({
   );
 }
 
+export function NumberInput({
+  value,
+  onChange,
+  label,
+  min = 0,
+  max = 9999,
+  className = "",
+  testId,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  label: string;
+  min?: number;
+  max?: number;
+  className?: string;
+  testId?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(String(value));
+  }, [value]);
+  const clamp = (v: number) => Math.min(max, Math.max(min, Math.round(v * 100) / 100));
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      enterKeyHint="done"
+      aria-label={label}
+      data-testid={testId}
+      value={text}
+      onFocus={(e) => {
+        editing.current = true;
+        e.target.select();
+      }}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^0-9.]/g, "");
+        setText(t);
+        const v = Number(t);
+        if (t !== "" && !Number.isNaN(v)) onChange(clamp(v));
+      }}
+      onBlur={() => {
+        editing.current = false;
+        setText(String(value));
+      }}
+      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      className={`bg-transparent text-center font-display font-bold italic outline-none ${className}`}
+    />
+  );
+}
+
 export function Stepper({
   label,
   value,
@@ -107,16 +160,13 @@ export function Stepper({
       <label className="flex flex-col items-center">
         <span className="text-[10px] font-semibold tracking-wider text-mute">{label}</span>
         <span className="flex items-baseline gap-0.5">
-          <input
-            type="number"
-            inputMode="decimal"
-            aria-label={label}
-            className="w-16 bg-transparent text-center font-display text-3xl font-bold italic outline-none"
+          <NumberInput
+            label={label}
             value={value}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (!Number.isNaN(v)) onChange(clamp(v));
-            }}
+            min={min}
+            max={max}
+            onChange={onChange}
+            className="w-20 rounded-lg text-3xl focus:bg-white/80"
           />
           {unit && <span className="text-xs font-semibold text-mute">{unit}</span>}
         </span>
@@ -188,19 +238,26 @@ export function WeightStepper({ value, onChange }: { value: number; onChange: (k
   );
 }
 
-/** Weight / reps / sets, or just minutes for cardio. */
-export function SetFields({ category, form, onChange }: { category: CategoryId; form: SetForm; onChange: (f: SetForm) => void }) {
+/** Work minutes, rest minutes (0 = no rest) and rounds; these drive the interval timer. */
+export function CardioFields({ value, onChange }: { value: CardioForm; onChange: (v: CardioForm) => void }) {
+  return (
+    <div className="space-y-3" data-testid="cardio-fields">
+      <div className="grid grid-cols-2 gap-3">
+        <Stepper label="運動" unit="分" min={1} max={600} value={value.reps} onChange={(reps) => onChange({ ...value, reps })} testId="minutes" />
+        <Stepper label="休憩" unit="分" min={0} max={120} value={value.rest} onChange={(rest) => onChange({ ...value, rest })} testId="rest-minutes" />
+      </div>
+      <Stepper label="セット" min={1} max={50} value={value.sets} onChange={(sets) => onChange({ ...value, sets })} testId="cardio-sets" />
+    </div>
+  );
+}
+
+/** Menu defaults: weight / reps / sets, or the cardio timer settings. */
+export function SetFields({ category, form, onChange }: { category: CategoryId; form: SetForm & { rest?: number }; onChange: (f: SetForm & { rest?: number }) => void }) {
   if (category === "cardio") {
     return (
-      <Stepper
-        label="時間"
-        unit="分"
-        min={1}
-        max={600}
-        step={5}
-        value={form.reps}
-        onChange={(reps) => onChange({ weight: 0, reps, sets: 1 })}
-        testId="minutes"
+      <CardioFields
+        value={{ reps: form.reps, rest: form.rest ?? 0, sets: form.sets }}
+        onChange={(v) => onChange({ weight: 0, ...v })}
       />
     );
   }
@@ -212,6 +269,80 @@ export function SetFields({ category, form, onChange }: { category: CategoryId; 
         <Stepper label="セット" min={1} max={99} value={form.sets} onChange={(sets) => onChange({ ...form, sets })} />
       </div>
     </>
+  );
+}
+
+/** One row per set, each with its own weight and reps. */
+export function SetRows({ sets, onChange }: { sets: SetEntry[]; onChange: (s: SetEntry[]) => void }) {
+  const unit = useStore((s) => s.unit);
+  const update = (i: number, patch: Partial<SetEntry>) => onChange(sets.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  return (
+    <div className="space-y-2" data-testid="set-rows">
+      <AnimatePresence initial={false}>
+        {sets.map((set, i) => (
+          <motion.div
+            key={i}
+            layout
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={spring}
+            data-testid="set-row"
+          >
+            <div className="glass flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-3">
+              <span className="w-10 shrink-0 font-display text-sm font-bold text-mute">SET {i + 1}</span>
+              <label className="flex flex-1 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
+                <NumberInput
+                  label={`${i + 1}セット目の重量`}
+                  value={displayWeight(set.weight, unit)}
+                  max={unit === "kg" ? 500 : 1100}
+                  onChange={(v) => update(i, { weight: fromUnit(v, unit) })}
+                  className="w-16 text-2xl"
+                />
+                <span className="text-xs font-semibold text-mute">{unitLabel(unit)}</span>
+              </label>
+              <span className="text-mute">×</span>
+              <label className="flex w-24 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
+                <NumberInput
+                  label={`${i + 1}セット目の回数`}
+                  value={set.reps}
+                  min={0}
+                  max={999}
+                  onChange={(reps) => update(i, { reps })}
+                  className="w-12 text-2xl"
+                />
+                <span className="text-xs font-semibold text-mute">回</span>
+              </label>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.85 }}
+                disabled={sets.length <= 1}
+                aria-label={`${i + 1}セット目を削除`}
+                onClick={() => {
+                  haptic(8);
+                  onChange(sets.filter((_, j) => j !== i));
+                }}
+                className="grid size-9 shrink-0 place-items-center rounded-full text-mute disabled:opacity-20"
+              >
+                <X size={16} />
+              </motion.button>
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.97 }}
+        data-testid="set-add"
+        onClick={() => {
+          haptic(8);
+          onChange([...sets, { ...sets[sets.length - 1] }]);
+        }}
+        className="flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-slate-900/15 text-sm font-bold text-mute"
+      >
+        <Plus size={16} /> セットを追加
+      </motion.button>
+    </div>
   );
 }
 
