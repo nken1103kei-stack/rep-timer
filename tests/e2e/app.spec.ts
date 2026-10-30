@@ -58,6 +58,37 @@ test("shows a full-screen skeleton, then menus and timers on the first screen", 
   await expect(page.getByTestId("preset-chip")).toHaveCount(5);
 });
 
+test("a random parody quote sits at the top; tapping shows another", async ({ page }) => {
+  const quote = page.getByTestId("quote-card");
+  await expect(quote).toBeVisible();
+  await expect(quote).toContainText("本日の筋トレ偉人の名言");
+  await expect(quote).toContainText("※フィクション・名言パロディ");
+  await expect(page.getByTestId("quote-text")).toHaveText(/^「.+」$/);
+  await expect(page.getByTestId("quote-name")).toHaveText(/^— .+ —$/);
+
+  // Above the timer, right under the header.
+  const q = (await quote.boundingBox())!;
+  const t = (await page.getByTestId("timer-panel").boundingBox())!;
+  expect(q.y + q.height).toBeLessThanOrEqual(t.y);
+
+  const seen = new Set<string>();
+  for (let i = 0; i < 4; i++) {
+    const id = (await quote.getAttribute("data-quote-id"))!;
+    seen.add(id);
+    await quote.click();
+    await expect(quote).not.toHaveAttribute("data-quote-id", id);
+  }
+  expect(seen.size).toBeGreaterThan(1);
+
+  // Random per open: across a few reloads more than one quote shows up.
+  const opened = new Set<string>();
+  for (let i = 0; i < 6 && opened.size < 2; i++) {
+    await page.reload();
+    opened.add((await quote.getAttribute("data-quote-id"))!);
+  }
+  expect(opened.size).toBe(2);
+});
+
 test("menus start empty and only appear after adding them with +", async ({ page }) => {
   await expect(page.getByTestId("menu-item")).toHaveCount(0);
   await expect(page.getByTestId("menu-list")).toBeAttached();

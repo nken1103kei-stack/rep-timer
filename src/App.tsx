@@ -10,6 +10,7 @@ import { Skeleton } from "./components/Skeleton";
 import { Header } from "./components/Header";
 import { TimerPanel } from "./components/TimerPanel";
 import { MenuList } from "./components/MenuList";
+import { QuoteCard } from "./components/QuoteCard";
 import { AccountSheet, LogSheet, MenuEditor, PresetEditor } from "./components/Sheets";
 import { TimerOverlay } from "./components/TimerOverlay";
 import { LibrarySheet } from "./components/LibrarySheet";
@@ -100,6 +101,7 @@ export default function App() {
           >
             {[
               <Header key="h" onAccount={() => setSheet({ type: "account" })} onCalendar={() => setCalendarOpen(true)} />,
+              <QuoteCard key="q" />,
               <TimerPanel key="t" onStart={start} onEditPreset={(id) => setSheet({ type: "preset", id: id ?? null })} />,
               <MenuList
                 key="m"

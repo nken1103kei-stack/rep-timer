@@ -18,7 +18,13 @@ export function Skeleton() {
           <div className="skeleton size-10 rounded-full" />
         </div>
       </div>
-      <div className="glass mt-1 rounded-[28px] p-4">
+      <div className="glass mb-3 flex flex-col items-center gap-2 rounded-[24px] px-5 pt-3.5 pb-3">
+        <div className="skeleton h-3 w-36 rounded-md" />
+        <div className="skeleton h-5 w-64 rounded-md" />
+        <div className="skeleton h-5 w-44 rounded-md" />
+        <div className="skeleton h-3 w-32 rounded-md" />
+      </div>
+      <div className="glass rounded-[28px] p-4">
         <div className="flex gap-2">
           {[64, 56, 60, 52].map((w, i) => (
             <div key={i} className="skeleton h-10 rounded-full" style={{ width: w }} />
