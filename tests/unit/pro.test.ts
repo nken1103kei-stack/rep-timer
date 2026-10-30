@@ -30,6 +30,13 @@ describe("stripe webhook signature", () => {
     expect(isOwner("other@example.test", "owner@example.test")).toBe(false);
     expect(isOwner("owner@example.test", undefined)).toBe(false);
     expect(isOwner("", "")).toBe(false);
+    // Hand-typed secrets: full-width characters, quotes, other separators, and Gmail's dot/+tag rules.
+    expect(isOwner("me.name@gmail.com", "ｍｅ．ｎａｍｅ＠ｇｍａｉｌ．ｃｏｍ")).toBe(true);
+    expect(isOwner("me.name@gmail.com", '"me.name@gmail.com"')).toBe(true);
+    expect(isOwner("me.name@gmail.com", "a@x.test； me.name@gmail.com")).toBe(true);
+    expect(isOwner("me.name@gmail.com", "a@x.test、memane@gmail.com")).toBe(false);
+    expect(isOwner("me.name@gmail.com", "mename+app@googlemail.com")).toBe(true);
+    expect(isOwner("me.name@example.test", "mename@example.test")).toBe(false);
   });
 
   it("treats only active and trialing subscriptions as Pro", () => {

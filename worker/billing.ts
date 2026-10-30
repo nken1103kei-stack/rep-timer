@@ -53,14 +53,29 @@ export async function stripe<T>(env: BillingEnv, path: string, params: Record<st
   return res.json() as Promise<T>;
 }
 
-/** Comma-separated owner emails (the app's creators), matched case-insensitively. */
+/**
+ * Canonical form of an email for owner matching. The secret is typed by hand (often with a Japanese IME), so full-width
+ * characters, quotes and stray spaces are tolerated; Gmail ignores dots and "+tags", so those are dropped too.
+ */
+export function canonicalEmail(raw: string) {
+  const email = raw.normalize("NFKC").replace(/["'`<>\s]/g, "").toLowerCase();
+  const at = email.lastIndexOf("@");
+  if (at < 1) return email;
+  let [local, domain] = [email.slice(0, at), email.slice(at + 1)];
+  if (domain === "googlemail.com") domain = "gmail.com";
+  if (domain === "gmail.com") local = local.split("+")[0].replace(/\./g, "");
+  return `${local}@${domain}`;
+}
+
+/** Owner emails (the app's creators), separated by commas, semicolons or whitespace. */
 export const isOwner = (email: string | null | undefined, owners: string | undefined) =>
   !!email &&
   (owners ?? "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean)
-    .includes(email.trim().toLowerCase());
+    .normalize("NFKC")
+    .split(/[,;\s、]+/)
+    .map(canonicalEmail)
+    .filter((e) => e.includes("@"))
+    .includes(canonicalEmail(email));
 
 /** Owners get Pro without a subscription; everyone else needs an active or trialing one. */
 export async function planFor(db: D1Database, userId: string, owner = false): Promise<Plan> {
