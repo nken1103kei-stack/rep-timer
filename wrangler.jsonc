@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rep-timer",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rep-timer-db",
+      "database_id": "7ca4c374-0bd2-4a15-a7b3-9c716ef198b0",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "GOOGLE_CLIENT_ID": ""
+  },
+  "observability": { "enabled": true }
+}

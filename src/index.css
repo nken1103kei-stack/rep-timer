@@ -1,0 +1,128 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700-italic.css";
+@import "@fontsource/barlow-condensed/800-italic.css";
+
+@theme {
+  --font-sans: "Inter Variable", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Inter Variable", sans-serif;
+  --color-ink: #0b0c0f;
+  --color-mute: #6b7280;
+  --color-accent: #ff4f00;
+  --color-rest: #00a3ff;
+  --color-ready: #ffb800;
+  --color-go: #14c38e;
+  --color-danger: #ff2d55;
+}
+
+:root {
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+html,
+body {
+  background: #f3f4f7;
+  min-height: 100dvh;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum";
+}
+
+button {
+  cursor: pointer;
+}
+
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+/* Liquid glass: translucent white, strong blur and saturation, a specular top edge and soft depth. */
+@utility glass {
+  position: relative;
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.72), rgb(255 255 255 / 0.42));
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgb(255 255 255 / 0.75);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.95),
+    inset 0 -1px 0 rgb(15 23 42 / 0.04),
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 12px 32px -8px rgb(15 23 42 / 0.12);
+}
+
+@utility glass-strong {
+  position: relative;
+  background: linear-gradient(170deg, rgb(255 255 255 / 0.92), rgb(255 255 255 / 0.78));
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 1),
+    0 -8px 40px -12px rgb(15 23 42 / 0.2);
+}
+
+@utility sheen {
+  overflow: hidden;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(115deg, rgb(255 255 255 / 0.55) 0%, rgb(255 255 255 / 0) 38%);
+    mix-blend-mode: soft-light;
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(100deg, rgb(15 23 42 / 0.06) 30%, rgb(15 23 42 / 0.12) 50%, rgb(15 23 42 / 0.06) 70%);
+  background-size: 300% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(4%, 6%, 0) scale(1.08);
+  }
+}
+
+.blob {
+  position: fixed;
+  border-radius: 9999px;
+  filter: blur(60px);
+  pointer-events: none;
+  animation: drift 18s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob,
+  .skeleton {
+    animation: none;
+  }
+}
