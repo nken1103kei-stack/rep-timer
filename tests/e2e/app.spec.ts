@@ -465,6 +465,34 @@ test("edit a menu from the log sheet", async ({ page }) => {
   await expect(page.getByTestId("menu-item").nth(2)).toHaveAttribute("data-name", "チンニング");
 });
 
+test("a menu's default weight and reps are typed in per set", async ({ page }) => {
+  await seedMenus(page);
+  await swipe(page, card(page, "デッドリフト"), 220);
+  await page.getByTestId("log-edit").click();
+  const editor = page.getByTestId("menu-editor");
+  await expect(editor.getByTestId("set-row")).toHaveCount(3);
+  await editor.getByTestId("set-add").click();
+  await expect(editor.getByTestId("set-row")).toHaveCount(4);
+  const values = [["60", "10"], ["100", "5"], ["120", "3"], ["80", "8"]];
+  for (const [i, [w, r]] of values.entries()) {
+    await editor.getByRole("textbox", { name: `${i + 1}セット目の重量` }).fill(w);
+    await editor.getByRole("textbox", { name: `${i + 1}セット目の回数` }).fill(r);
+  }
+  await editor.getByTestId("menu-save").click();
+  await expect(editor).toBeHidden();
+  const summary = "60kg×10 / 100kg×5 / 120kg×3 / 80kg×8";
+  await expect(card(page, "デッドリフト")).toContainText(summary);
+
+  // The record sheet starts from the planned sets, and the plan survives a reload.
+  await page.reload();
+  await expect(card(page, "デッドリフト")).toContainText(summary);
+  await swipe(page, card(page, "デッドリフト"), 220);
+  const sheet = page.getByTestId("log-sheet");
+  await expect(sheet.getByTestId("set-row")).toHaveCount(4);
+  await expect(sheet.getByRole("textbox", { name: "3セット目の重量" })).toHaveValue("120");
+  await expect(sheet.getByRole("textbox", { name: "3セット目の回数" })).toHaveValue("3");
+});
+
 test("drag the grip to reorder menus", async ({ page }) => {
   await seedMenus(page);
   const grip = page.locator('[data-testid=menu-item][data-name="ランニング"] [data-testid=menu-grip]');

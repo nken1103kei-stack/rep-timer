@@ -111,7 +111,7 @@ test("CSV export and import (Strong format) are free", async ({ page }) => {
   await expect(page.getByTestId("csv-result")).toHaveText("0件の記録・0件のメニューを読み込みました（1件スキップ）");
   await closeSheet(page);
   await expect(page.locator('[data-testid=menu-item][data-name="Overhead Press"]')).toHaveAttribute("data-cat", "shoulder");
-  await expect(card(page, "Overhead Press")).toContainText("40kg × 8 × 2");
+  await expect(card(page, "Overhead Press")).toContainText("40kg×8 / 42.5kg×6");
 });
 
 test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", async ({ page }) => {

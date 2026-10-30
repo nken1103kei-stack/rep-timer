@@ -154,7 +154,7 @@ export function importCsv(text: string, existing: { exercises: Exercise[]; logs:
   // New menus start from their latest imported record.
   for (const ex of created) {
     const last = logs.filter((l) => l.exerciseId === ex.id).sort((a, b) => b.at - a.at)[0];
-    if (last) Object.assign(ex, { weight: last.weight, reps: last.reps, sets: last.sets, ...(ex.category === "cardio" ? { rest: last.rest ?? 0 } : {}) });
+    if (last) Object.assign(ex, { weight: last.weight, reps: last.reps, sets: last.sets, detail: last.detail, ...(ex.category === "cardio" ? { rest: last.rest ?? 0 } : {}) });
   }
   return { exercises: created, logs, skipped };
 }

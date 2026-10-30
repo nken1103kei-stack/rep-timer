@@ -19,6 +19,8 @@ export type Exercise = {
   reps: number;
   sets: number;
   rest?: number;
+  /** Planned weight and reps for each set; `weight`/`reps` mirror the first set. */
+  detail?: SetEntry[];
 };
 
 export type LogEntry = {

@@ -119,7 +119,7 @@ export const useStore = create<State>()(
               // The latest record becomes the menu's default for next time.
               exercises: s.exercises.map((e) =>
                 e.id === log.exerciseId
-                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, ...(e.category === "cardio" ? { rest: log.rest ?? 0 } : {}) }
+                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, detail: log.detail, ...(e.category === "cardio" ? { rest: log.rest ?? 0 } : {}) }
                   : e,
               ),
               ...touched(),

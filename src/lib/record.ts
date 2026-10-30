@@ -15,9 +15,13 @@ export const nextSetType = (t: SetType | undefined): SetType => (t === "W" ? "D"
 export type CardioForm = { reps: number; rest: number; sets: number };
 export type RecordForm = { sets: SetEntry[]; cardio: CardioForm };
 
-/** Starting values for a new record: the last time's sets, sized to `rounds` when a timer ran. */
+/**
+ * Starting values for a new record: the menu's per-set plan (kept in step with the latest record),
+ * else the last time's sets; sized to `rounds` when a timer ran.
+ */
 export function initialRecord(ex: Exercise, last: LogEntry | undefined, rounds?: number): RecordForm {
-  let sets = setsOf({ ...(last ?? ex), category: ex.category }).map((s) => ({ ...s }));
+  const source = ex.detail?.length || !last ? ex : last;
+  let sets = setsOf({ ...source, category: ex.category }).map((s) => ({ ...s }));
   if (rounds) {
     sets = Array.from({ length: rounds }, (_, i) => ({ ...(sets[i] ?? sets[sets.length - 1]) }));
   }

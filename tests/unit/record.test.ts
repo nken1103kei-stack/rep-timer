@@ -24,6 +24,13 @@ describe("per-set records", () => {
     expect(initialRecord(bench, last, 1).sets).toEqual([{ weight: 60, reps: 10 }]);
   });
 
+  it("uses the menu's per-set plan once one has been typed in", () => {
+    const plan = [{ weight: 40, reps: 12 }, { weight: 80, reps: 5 }, { weight: 90, reps: 3 }];
+    const last: LogEntry = { id: "l", exerciseId: "b", at: 0, weight: 60, reps: 10, sets: 1 };
+    expect(initialRecord({ ...bench, detail: plan }, last).sets).toEqual(plan);
+    expect(formatSet({ ...bench, detail: plan }, "kg")).toBe("40kg×12 / 80kg×5 / 90kg×3");
+  });
+
   it("stores each set's weight and reps and formats varied sets one by one", () => {
     const log = toLog(bench, { sets: [{ weight: 60, reps: 10 }, { weight: 62.5, reps: 8 }], cardio: { reps: 0, rest: 0, sets: 1 } });
     expect(log).toEqual({ exerciseId: "b", weight: 60, reps: 10, sets: 2, detail: [{ weight: 60, reps: 10 }, { weight: 62.5, reps: 8 }] });

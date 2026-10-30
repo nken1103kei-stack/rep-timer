@@ -33,7 +33,7 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
   const setCategory = (next: CategoryId) => {
     // Switching into or out of cardio swaps between minutes and weight/reps/sets.
     const crossing = (next === "cardio") !== (form.category === "cardio");
-    setForm({ ...form, ...(crossing ? DEFAULT_TEMPLATE(next) : {}), name: form.name, category: next });
+    setForm({ ...form, ...(crossing ? { ...DEFAULT_TEMPLATE(next), detail: undefined } : {}), name: form.name, category: next });
   };
 
   const save = () => {
@@ -84,7 +84,14 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
             );
           })}
         </div>
-        <SetFields category={form.category} form={form} onChange={(f) => setForm({ ...form, ...f })} />
+        {form.category === "cardio" ? (
+          <SetFields category={form.category} form={form} onChange={(f) => setForm({ ...form, ...f })} />
+        ) : (
+          <SetRows
+            sets={setsOf(form)}
+            onChange={(sets) => setForm({ ...form, weight: sets[0].weight, reps: sets[0].reps, sets: sets.length, detail: sets })}
+          />
+        )}
         <div className="pt-2 pb-2">
           <PrimaryButton onClick={save} disabled={!form.name.trim()} testId="menu-save">
             {existing ? "保存" : "追加"}
