@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { SESSION_COOKIE, SESSION_TTL_SEC, signSession, verifySession } from "./session";
-import { applyEvent, customerFor, isOwner, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
+import { applyEvent, customerFor, isOwner, ownerList, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
 
 type Env = BillingEnv & {
   GOOGLE_CLIENT_ID: string;
@@ -107,7 +107,10 @@ app.get("/me", async (c) => {
     .bind(c.get("userId"))
     .first<{ id: string; email: string }>();
   if (!user) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ user, plan: await planFor(c.env.DB, user.id, isOwner(user.email, c.env.OWNER_EMAILS)) });
+  const owner = isOwner(user.email, c.env.OWNER_EMAILS);
+  // How many addresses the owner secret holds (never the addresses), so a mistyped or empty secret can be spotted.
+  const ownerEntries = ownerList(c.env.OWNER_EMAILS).length;
+  return c.json({ user, plan: await planFor(c.env.DB, user.id, owner), ownerEntries });
 });
 
 // --- Billing (Stripe Checkout subscription + customer portal) ---

@@ -68,14 +68,15 @@ export function canonicalEmail(raw: string) {
 }
 
 /** Owner emails (the app's creators), separated by commas, semicolons or whitespace. */
-export const isOwner = (email: string | null | undefined, owners: string | undefined) =>
-  !!email &&
+export const ownerList = (owners: string | undefined) =>
   (owners ?? "")
     .normalize("NFKC")
     .split(/[,;\s、]+/)
     .map(canonicalEmail)
-    .filter((e) => e.includes("@"))
-    .includes(canonicalEmail(email));
+    .filter((e) => e.includes("@"));
+
+export const isOwner = (email: string | null | undefined, owners: string | undefined) =>
+  !!email && ownerList(owners).includes(canonicalEmail(email));
 
 /** Owners get Pro without a subscription; everyone else needs an active or trialing one. */
 export async function planFor(db: D1Database, userId: string, owner = false): Promise<Plan> {
