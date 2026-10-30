@@ -29,6 +29,7 @@ import {
   formatSet,
   resolveLog,
   shareText,
+  type ShareResult,
 } from "../lib/stats";
 
 const SWIPE = 96;
@@ -42,7 +43,7 @@ export function MenuList({
   onAdd: () => void;
   onLog: (id: string) => void;
   onDelete: (id: string) => void;
-  onShared: (result: string) => void;
+  onShared: (result: ShareResult | "empty", text?: string) => void;
 }) {
   const exercises = useStore((s) => s.exercises);
   const reorder = useStore((s) => s.reorderExercises);
@@ -76,14 +77,15 @@ export function MenuList({
             whileTap={{ scale: 0.92 }}
             aria-label="今日のトレーニングを共有"
             data-testid="share-today"
-            disabled={todayLogs.length === 0}
+            data-empty={todayLogs.length === 0}
             onClick={async () => {
               haptic(10);
-              onShared(
-                await shareText(dayShareText(Date.now(), todayLogs, unit)),
-              );
+              // Always tappable: with nothing recorded yet it explains why instead of silently doing nothing.
+              if (todayLogs.length === 0) return onShared("empty");
+              const text = dayShareText(Date.now(), todayLogs, unit);
+              onShared(await shareText(text), text);
             }}
-            className="glass flex h-10 items-center gap-1.5 rounded-full px-3.5 text-sm font-bold text-ink transition-opacity disabled:opacity-35"
+            className={`glass flex h-10 items-center gap-1.5 rounded-full px-3.5 text-sm font-bold text-ink transition-opacity ${todayLogs.length === 0 ? "opacity-60" : ""}`}
           >
             <Share2 size={16} strokeWidth={2.4} />
             今日

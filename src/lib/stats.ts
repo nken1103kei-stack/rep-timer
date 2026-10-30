@@ -121,8 +121,43 @@ export function monthShareText(year: number, month: number, s: Summary, unit: Un
 }
 
 /** Opens the OS share sheet, falling back to the clipboard. */
-export async function shareText(text: string): Promise<"shared" | "copied" | "cancelled" | "failed"> {
-  if (navigator.share) {
+export type ShareResult = "shared" | "copied" | "cancelled" | "failed";
+
+/** Copies via a hidden textarea; works where the async Clipboard API is missing or blocked (in-app browsers, http). */
+function legacyCopy(text: string) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.cssText = "position:fixed;top:0;left:0;opacity:0;font-size:16px";
+  document.body.appendChild(area);
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+}
+
+export async function copyText(text: string) {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("no clipboard");
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return legacyCopy(text);
+  }
+}
+
+/**
+ * OS share sheet first, then the clipboard. `navigator.share` must run before any await so the tap still counts
+ * as a user gesture; it can also be missing or refused (desktop, in-app browsers, a share already open).
+ */
+export async function shareText(text: string): Promise<ShareResult> {
+  if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare({ text }))) {
     try {
       await navigator.share({ text });
       return "shared";
@@ -130,10 +165,5 @@ export async function shareText(text: string): Promise<"shared" | "copied" | "ca
       if ((e as Error).name === "AbortError") return "cancelled";
     }
   }
-  try {
-    await navigator.clipboard.writeText(text);
-    return "copied";
-  } catch {
-    return "failed";
-  }
+  return (await copyText(text)) ? "copied" : "failed";
 }

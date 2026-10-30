@@ -18,13 +18,14 @@ import {
   resolveLog,
   shareText,
   summarize,
+  type ShareResult,
 } from "../lib/stats";
 import { haptic } from "../lib/feedback";
 import { CategoryBadge, spring } from "./ui";
 
 const WEEK = ["日", "月", "火", "水", "木", "金", "土"];
 
-export function CalendarView({ onClose, onShared }: { onClose: () => void; onShared: (result: string) => void }) {
+export function CalendarView({ onClose, onShared }: { onClose: () => void; onShared: (result: ShareResult, text: string) => void }) {
   const rawLogs = useStore((s) => s.logs);
   const exercises = useStore((s) => s.exercises);
   const unit = useStore((s) => s.unit);
@@ -54,7 +55,7 @@ export function CalendarView({ onClose, onShared }: { onClose: () => void; onSha
 
   const share = async (text: string) => {
     haptic(10);
-    onShared(await shareText(text));
+    onShared(await shareText(text), text);
   };
 
   const selectedMs = new Date(`${selected}T12:00:00`).getTime();

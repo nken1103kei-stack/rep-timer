@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Undo2 } from "lucide-react";
+import { Copy, Undo2 } from "lucide-react";
 import { useStore } from "./lib/store";
 import { bootstrap, refreshPlan, useSession } from "./lib/sync";
 import { unlockAudio } from "./lib/feedback";
@@ -15,7 +15,8 @@ import { AccountSheet, LogSheet, MenuEditor, PresetEditor } from "./components/S
 import { TimerOverlay } from "./components/TimerOverlay";
 import { LibrarySheet } from "./components/LibrarySheet";
 import { CalendarView } from "./components/CalendarView";
-import { spring } from "./components/ui";
+import { PrimaryButton, Sheet, spring } from "./components/ui";
+import { copyText, type ShareResult } from "./lib/stats";
 import { openProSheet, ProSheet } from "./components/Pro";
 
 type SheetState =
@@ -51,9 +52,13 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
-  const onShared = (r: string) => {
-    if (r === "copied") showToast({ text: "クリップボードにコピーしました" });
-    else if (r === "failed") showToast({ text: "共有できませんでした" });
+  // Text to copy by hand when neither the share sheet nor the clipboard worked.
+  const [manualShare, setManualShare] = useState<string | null>(null);
+
+  const onShared = (r: ShareResult | "empty", text = "") => {
+    if (r === "copied") showToast({ text: "クリップボードにコピーしました。LINE や SNS に貼り付けて共有できます" });
+    else if (r === "failed") setManualShare(text);
+    else if (r === "empty") showToast({ text: "今日の記録はまだありません。メニューをタップして記録すると共有できます" });
   };
 
   const showToast = (t: Omit<Toast, "id">) => {
@@ -144,6 +149,29 @@ export default function App() {
       <PresetEditor open={sheet?.type === "preset"} id={sheet?.type === "preset" ? sheet.id : null} onClose={close} />
       <AccountSheet open={sheet?.type === "account"} onClose={close} />
       <ProSheet onLogin={() => setSheet({ type: "account" })} />
+      <Sheet open={manualShare !== null} onClose={() => setManualShare(null)} title="共有する内容" testId="share-sheet" above>
+        <div className="space-y-3 pt-1 pb-2">
+          <p className="text-xs font-semibold text-mute">この端末では共有画面を開けませんでした。下の文章をコピーして、LINE や SNS に貼り付けてください。</p>
+          <textarea
+            readOnly
+            data-testid="share-text"
+            value={manualShare ?? ""}
+            rows={Math.min(10, (manualShare ?? "").split(String.fromCharCode(10)).length + 1)}
+            onFocus={(e) => e.target.select()}
+            className="glass w-full resize-none rounded-2xl p-3 text-[15px] leading-relaxed font-semibold outline-none"
+          />
+          <PrimaryButton
+            testId="share-copy"
+            onClick={async () => {
+              const ok = await copyText(manualShare ?? "");
+              showToast({ text: ok ? "コピーしました" : "文章を長押しして選択し、コピーしてください" });
+              if (ok) setManualShare(null);
+            }}
+          >
+            <Copy size={18} /> コピーする
+          </PrimaryButton>
+        </div>
+      </Sheet>
 
       <AnimatePresence>
         {calendarOpen && (

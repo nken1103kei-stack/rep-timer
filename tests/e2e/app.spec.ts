@@ -100,7 +100,7 @@ test("a random parody quote sits at the top; tapping shows another", async ({ pa
 test("menus start empty and only appear after adding them with +", async ({ page }) => {
   await expect(page.getByTestId("menu-item")).toHaveCount(0);
   await expect(page.getByTestId("menu-list")).toBeAttached();
-  await expect(page.getByTestId("share-today")).toBeDisabled();
+  await expect(page.getByTestId("share-today")).toHaveAttribute("data-empty", "true");
   await page.reload();
   await expect(page.getByTestId("menu-item")).toHaveCount(0);
 
@@ -367,7 +367,10 @@ test("share today's training and the monthly summary", async ({ page }) => {
   });
   await page.reload();
   await seedMenus(page);
-  await expect(page.getByTestId("share-today")).toBeDisabled();
+  // Nothing recorded yet: the button still responds and says why there is nothing to share.
+  await expect(page.getByTestId("share-today")).toBeEnabled();
+  await page.getByTestId("share-today").click();
+  await expect(page.getByTestId("toast")).toContainText("今日の記録はまだありません");
   await logToday(page, "ベンチプレス");
   await logToday(page, "ランニング");
 
@@ -394,6 +397,39 @@ test("share today's training and the monthly summary", async ({ page }) => {
   await expect(page.getByTestId("toast")).toContainText("コピー");
   const copied = await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied);
   expect(copied[0]).toContain("ベンチプレス");
+});
+
+test("today's share still works where the share sheet and clipboard are blocked", async ({ page }) => {
+  // An in-app browser: share is refused, the Clipboard API throws and execCommand copy fails.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => {
+        throw new DOMException("blocked", "NotAllowedError");
+      },
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new DOMException("blocked", "NotAllowedError");
+        },
+      },
+    });
+    document.execCommand = () => false;
+  });
+  await page.reload();
+  await seedMenus(page);
+  await logToday(page, "ベンチプレス");
+  await page.getByTestId("share-today").click();
+
+  // The text is shown so it can be copied by hand, instead of a dead end.
+  const sheet = page.getByTestId("share-sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByTestId("share-text")).toHaveValue(/のトレーニング/);
+  await expect(sheet.getByTestId("share-text")).toHaveValue(/ベンチプレス（胸）60kg × 10 × 3/);
+  await sheet.getByTestId("share-copy").click();
+  await expect(page.getByTestId("toast")).toContainText("長押し");
 });
 
 test("a cardio menu drives the timer with its work / rest minutes and sets", async ({ page }) => {

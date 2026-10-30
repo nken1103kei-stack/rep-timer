@@ -45,12 +45,15 @@ export function Sheet({
   title,
   children,
   testId,
+  above = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
   children: ReactNode;
   testId?: string;
+  /** Stack over full-screen views such as the calendar. */
+  above?: boolean;
 }) {
   const controls = useDragControls();
   const keyboard = useKeyboardInset();
@@ -60,7 +63,7 @@ export function Sheet({
         <>
           <motion.div
             key="scrim"
-            className="fixed inset-0 z-40 bg-slate-900/25 backdrop-blur-[3px]"
+            className={`fixed inset-0 bg-slate-900/25 backdrop-blur-[3px] ${above ? "z-[64]" : "z-40"}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -72,7 +75,7 @@ export function Sheet({
             role="dialog"
             aria-modal="true"
             data-testid={testId}
-            className="glass-strong fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]"
+            className={`glass-strong fixed inset-x-0 bottom-0 ${above ? "z-[65]" : "z-50"} mx-auto flex max-h-[88dvh] max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]`}
             style={keyboard ? { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 24px)` } : undefined}
             data-keyboard={keyboard || undefined}
             initial={{ y: "100%" }}
