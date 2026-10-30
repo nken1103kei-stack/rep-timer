@@ -5,7 +5,7 @@ import { useStore } from "../lib/store";
 import { buildSegments, formatClock, formatDuration, segmentStart, timerAt, type Phase } from "../lib/timer";
 import type { Exercise, Preset } from "../lib/types";
 import { beep, haptic, keepAwake } from "../lib/feedback";
-import { PrimaryButton, spring, Stepper } from "./ui";
+import { PrimaryButton, SetFields, spring } from "./ui";
 
 const PHASE: Record<Phase, { label: string; color: string; tint: string }> = {
   prepare: { label: "READY", color: "#FFB800", tint: "rgb(255 184 0 / 0.28)" },
@@ -228,10 +228,12 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
 
 function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise | null; preset: Preset; totalMs: number; onClose: () => void }) {
   const addLog = useStore((s) => s.addLog);
+  const cardio = exercise?.category === "cardio";
   const [form, setForm] = useState({
     weight: exercise?.weight ?? 0,
-    reps: exercise?.reps ?? 10,
-    sets: exercise ? (preset.work > 0 ? preset.rounds : exercise.sets) : 1,
+    // Cardio records the minutes actually spent on the timer.
+    reps: cardio ? Math.max(1, Math.round(totalMs / 60000)) : (exercise?.reps ?? 10),
+    sets: cardio ? 1 : exercise ? (preset.work > 0 ? preset.rounds : exercise.sets) : 1,
   });
   return (
     <motion.div
@@ -256,11 +258,7 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
       <div className="mt-auto space-y-3">
         {exercise && (
           <>
-            <Stepper label="重量" unit="kg" step={2.5} max={500} value={form.weight} onChange={(weight) => setForm({ ...form, weight })} />
-            <div className="grid grid-cols-2 gap-3">
-              <Stepper label="回数" min={1} value={form.reps} onChange={(reps) => setForm({ ...form, reps })} />
-              <Stepper label="セット" min={1} max={99} value={form.sets} onChange={(sets) => setForm({ ...form, sets })} />
-            </div>
+            <SetFields category={exercise.category} form={form} onChange={setForm} />
             <PrimaryButton
               testId="record-save"
               onClick={() => {

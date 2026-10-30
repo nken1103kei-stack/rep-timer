@@ -78,7 +78,8 @@ async function push() {
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
   if (!useSession.getState().user) return;
-  if (s.exercises === prev.exercises && s.logs === prev.logs && s.presets === prev.presets) return;
+  const keys = ["exercises", "logs", "presets", "customLibrary", "unit"] as const;
+  if (keys.every((k) => s[k] === prev[k])) return;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(push, 1200);
 });

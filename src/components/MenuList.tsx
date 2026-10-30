@@ -3,7 +3,9 @@ import { Check, GripVertical, NotebookPen, Plus, Trash2 } from "lucide-react";
 import { lastLogFor, useStore } from "../lib/store";
 import type { Exercise } from "../lib/types";
 import { haptic } from "../lib/feedback";
-import { formatDate, formatWeight, spring } from "./ui";
+import { CategoryBadge, spring } from "./ui";
+import { category } from "../lib/catalog";
+import { formatDate, formatSet } from "../lib/stats";
 
 const SWIPE = 96;
 
@@ -73,6 +75,8 @@ function MenuRow({ ex, index, onLog, onDelete }: { ex: Exercise; index: number; 
   const selected = useStore((s) => s.selectedExerciseId === ex.id);
   const selectExercise = useStore((s) => s.selectExercise);
   const last = useStore((s) => lastLogFor(s.logs, ex.id));
+  const unit = useStore((s) => s.unit);
+  const color = category(ex.category).color;
 
   return (
     <Reorder.Item
@@ -81,6 +85,7 @@ function MenuRow({ ex, index, onLog, onDelete }: { ex: Exercise; index: number; 
       dragControls={controls}
       data-testid="menu-item"
       data-name={ex.name}
+      data-cat={ex.category}
       initial={{ opacity: 0, y: 16, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1, transition: { ...spring, delay: Math.min(index, 8) * 0.04 } }}
       exit={{ opacity: 0, height: 0, marginTop: 0, transition: { duration: 0.22 } }}
@@ -133,15 +138,18 @@ function MenuRow({ ex, index, onLog, onDelete }: { ex: Exercise; index: number; 
       >
         <motion.span
           className="w-1.5 rounded-full"
-          style={{ background: ex.color }}
+          style={{ background: color }}
           animate={{ height: selected ? 44 : 32 }}
           transition={spring}
         />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold">{ex.name}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-[15px] font-bold">{ex.name}</span>
+            <CategoryBadge id={ex.category} size="xs" />
+          </div>
           <div className="mt-0.5 flex items-center gap-2 text-xs font-medium text-mute">
             <span className="font-display text-sm font-semibold text-ink/80">
-              {formatWeight(ex.weight)} × {ex.reps} × {ex.sets}
+              {formatSet(ex, unit)}
             </span>
             {last && <span>· {formatDate(last.at)}</span>}
           </div>

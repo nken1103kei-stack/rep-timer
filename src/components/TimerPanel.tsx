@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Dumbbell, Play, Plus, X } from "lucide-react";
+import { Activity, Play, Plus, X } from "lucide-react";
 import { useStore } from "../lib/store";
 import { buildSegments, formatDuration, totalMs } from "../lib/timer";
 import type { Preset } from "../lib/types";
 import { haptic } from "../lib/feedback";
-import { formatWeight, spring } from "./ui";
+import { spring } from "./ui";
+import { category } from "../lib/catalog";
 
 export const presetLabel = (p: Preset) =>
   p.work === 0 ? formatDuration(p.rest * 1000) : `${p.work}/${p.rest}`;
@@ -15,6 +16,7 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
   const selectPreset = useStore((s) => s.selectPreset);
   const exercise = useStore((s) => s.exercises.find((e) => e.id === s.selectedExerciseId));
   const selectExercise = useStore((s) => s.selectExercise);
+  const cardio = exercise?.category === "cardio" ? exercise : null;
   const preset = presets.find((p) => p.id === selectedPresetId) ?? presets[0];
   const total = totalMs(buildSegments({ prepare: 0, ...preset }));
 
@@ -108,35 +110,38 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
         </motion.button>
       </div>
 
-      <div className="mt-4 flex h-11 items-center gap-2 rounded-2xl bg-white/55 px-3" data-testid="selected-menu">
-        <Dumbbell size={16} className="shrink-0 text-mute" />
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={exercise?.id ?? "none"}
-            initial={{ opacity: 0, x: 8 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -8 }}
-            className="min-w-0 flex-1 truncate text-sm font-semibold"
+      {/* Cardio is timed, so the chosen cardio menu rides along with the timer. */}
+      <AnimatePresence initial={false}>
+        {cardio && (
+          <motion.div
+            key="cardio"
+            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+            animate={{ height: 44, opacity: 1, marginTop: 16 }}
+            exit={{ height: 0, opacity: 0, marginTop: 0 }}
+            transition={spring}
+            className="overflow-hidden"
           >
-            {exercise ? (
-              <>
-                <span className="mr-1.5 inline-block size-2 rounded-full" style={{ background: exercise.color }} />
-                {exercise.name}
-                <span className="ml-2 text-mute">
-                  {formatWeight(exercise.weight)} × {exercise.reps}
-                </span>
-              </>
-            ) : (
-              <span className="text-mute">メニュー未選択</span>
-            )}
-          </motion.span>
-        </AnimatePresence>
-        {exercise && (
-          <button type="button" aria-label="選択解除" onClick={() => selectExercise(null)} className="text-mute">
-            <X size={16} />
-          </button>
+            <div className="flex h-11 items-center gap-2 rounded-2xl bg-white/55 px-3" data-testid="selected-menu">
+              <Activity size={16} className="shrink-0" style={{ color: category("cardio").color }} />
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={cardio.id}
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  className="min-w-0 flex-1 truncate text-sm font-semibold"
+                >
+                  {cardio.name}
+                  <span className="ml-2 text-mute">{cardio.reps}分</span>
+                </motion.span>
+              </AnimatePresence>
+              <button type="button" aria-label="選択解除" onClick={() => selectExercise(null)} className="text-mute">
+                <X size={16} />
+              </button>
+            </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </section>
   );
 }

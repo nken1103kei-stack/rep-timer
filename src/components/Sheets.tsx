@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
 import { Check, LogOut, Pencil, Trash2 } from "lucide-react";
-import { COLORS, useStore } from "../lib/store";
+import { useStore } from "../lib/store";
+import { CATEGORIES, DEFAULT_TEMPLATE, type CategoryId } from "../lib/catalog";
+import { formatDate, formatSet, formatVolume, formatWeight } from "../lib/stats";
 import { signInWithGoogle, signOut, useSession } from "../lib/sync";
 import { buildSegments, formatDuration, totalMs } from "../lib/timer";
-import type { LogEntry } from "../lib/types";
+import type { Exercise, LogEntry } from "../lib/types";
 import { haptic } from "../lib/feedback";
-import { formatDate, formatWeight, PrimaryButton, Sheet, spring, Stepper } from "./ui";
+import { CategoryBadge, PrimaryButton, SetFields, Sheet, spring, Stepper } from "./ui";
 
 const inputClass =
   "glass h-13 w-full rounded-2xl px-4 text-base font-semibold outline-none placeholder:text-slate-400 focus:outline-2 focus:outline-accent";
@@ -15,17 +17,18 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
   const existing = useStore((s) => s.exercises.find((e) => e.id === id));
   const addExercise = useStore((s) => s.addExercise);
   const updateExercise = useStore((s) => s.updateExercise);
-  const [form, setForm] = useState({ name: "", weight: 20, reps: 10, sets: 3, color: COLORS[0] });
+  const [form, setForm] = useState<Omit<Exercise, "id">>({ ...DEFAULT_TEMPLATE("other"), category: "other" });
 
   useEffect(() => {
     if (!open) return;
-    const used = new Set(useStore.getState().exercises.map((e) => e.color));
-    setForm(
-      existing
-        ? { name: existing.name, weight: existing.weight, reps: existing.reps, sets: existing.sets, color: existing.color }
-        : { name: "", weight: 20, reps: 10, sets: 3, color: COLORS.find((c) => !used.has(c)) ?? COLORS[0] },
-    );
+    setForm(existing ? { ...existing } : { ...DEFAULT_TEMPLATE("other"), category: "other" });
   }, [open, existing]);
+
+  const setCategory = (next: CategoryId) => {
+    // Switching into or out of cardio swaps between minutes and weight/reps/sets.
+    const crossing = (next === "cardio") !== (form.category === "cardio");
+    setForm({ ...form, ...(crossing ? DEFAULT_TEMPLATE(next) : {}), name: form.name, category: next });
+  };
 
   const save = () => {
     const name = form.name.trim();
@@ -48,32 +51,34 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           onKeyDown={(e) => e.key === "Enter" && save()}
         />
-        <div className="flex justify-between px-1" role="radiogroup" aria-label="カラー">
-          {COLORS.map((c) => (
-            <motion.button
-              key={c}
-              type="button"
-              role="radio"
-              aria-checked={form.color === c}
-              aria-label={c}
-              whileTap={{ scale: 0.8 }}
-              onClick={() => setForm({ ...form, color: c })}
-              className="grid size-10 place-items-center rounded-full"
-              style={{ background: c, boxShadow: form.color === c ? `0 0 0 3px white, 0 0 0 5px ${c}` : undefined }}
-            >
-              {form.color === c && (
-                <motion.span layoutId="color-check" transition={spring}>
-                  <Check size={18} strokeWidth={3} className="text-white" />
-                </motion.span>
-              )}
-            </motion.button>
-          ))}
+        <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="部位">
+          {CATEGORIES.map((c) => {
+            const active = form.category === c.id;
+            return (
+              <motion.button
+                key={c.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                data-testid="category-option"
+                data-cat={c.id}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setCategory(c.id)}
+                className="relative flex h-10 items-center justify-center gap-1.5 rounded-xl text-sm font-bold"
+                style={{ color: active ? "#fff" : "#0b0c0f" }}
+              >
+                {active ? (
+                  <motion.span layoutId="category-pick" transition={spring} className="absolute inset-0 rounded-xl" style={{ background: c.color }} />
+                ) : (
+                  <span className="absolute inset-0 rounded-xl bg-white/70" />
+                )}
+                <span className="relative size-2 rounded-full" style={{ background: active ? "#fff" : c.color }} />
+                <span className="relative">{c.label}</span>
+              </motion.button>
+            );
+          })}
         </div>
-        <Stepper label="重量" unit="kg" step={2.5} max={500} value={form.weight} onChange={(weight) => setForm({ ...form, weight })} />
-        <div className="grid grid-cols-2 gap-3">
-          <Stepper label="回数" min={1} value={form.reps} onChange={(reps) => setForm({ ...form, reps })} />
-          <Stepper label="セット" min={1} max={30} value={form.sets} onChange={(sets) => setForm({ ...form, sets })} />
-        </div>
+        <SetFields category={form.category} form={form} onChange={(f) => setForm({ ...form, ...f })} />
         <div className="pt-2 pb-2">
           <PrimaryButton onClick={save} disabled={!form.name.trim()} testId="menu-save">
             {existing ? "保存" : "追加"}
@@ -87,6 +92,7 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
 export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: () => void; onEdit: (id: string) => void }) {
   const exercise = useStore((s) => s.exercises.find((e) => e.id === id));
   const logs = useStore((s) => s.logs);
+  const unit = useStore((s) => s.unit);
   const addLog = useStore((s) => s.addLog);
   const [form, setForm] = useState({ weight: 0, reps: 0, sets: 0 });
   const [saved, setSaved] = useState(false);
@@ -100,6 +106,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
   const history = logs.filter((l) => l.exerciseId === id);
   const best = history.reduce((m, l) => Math.max(m, l.weight), 0);
   const volume = history.reduce((sum, l) => sum + l.weight * l.reps * l.sets, 0);
+  const cardio = exercise?.category === "cardio";
 
   return (
     <Sheet
@@ -109,7 +116,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
       title={
         exercise && (
           <div className="flex items-center gap-2">
-            <span className="size-3 rounded-full" style={{ background: exercise.color }} />
+            <CategoryBadge id={exercise.category} />
             <span className="flex-1 truncate">{exercise.name}</span>
             <motion.button
               type="button"
@@ -128,15 +135,19 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
       {exercise && (
         <div className="space-y-3 pt-1">
           <div className="grid grid-cols-3 gap-2">
-            <Stat label="ベスト" value={best ? formatWeight(best) : "–"} />
+            {cardio ? (
+              <Stat label="最長" value={history.length ? `${Math.max(...history.map((l) => l.reps))}分` : "–"} />
+            ) : (
+              <Stat label="ベスト" value={best ? formatWeight(best, unit) : "–"} />
+            )}
             <Stat label="記録" value={`${history.length}`} />
-            <Stat label="総ボリューム" value={volume ? `${Math.round(volume / 100) / 10}t` : "–"} />
+            {cardio ? (
+              <Stat label="合計時間" value={history.length ? `${history.reduce((m, l) => m + l.reps, 0)}分` : "–"} />
+            ) : (
+              <Stat label="総ボリューム" value={volume ? formatVolume(volume, unit) : "–"} />
+            )}
           </div>
-          <Stepper label="重量" unit="kg" step={2.5} max={500} value={form.weight} onChange={(weight) => setForm({ ...form, weight })} />
-          <div className="grid grid-cols-2 gap-3">
-            <Stepper label="回数" min={1} value={form.reps} onChange={(reps) => setForm({ ...form, reps })} />
-            <Stepper label="セット" min={1} max={30} value={form.sets} onChange={(sets) => setForm({ ...form, sets })} />
-          </div>
+          <SetFields category={exercise.category} form={form} onChange={setForm} />
           <PrimaryButton
             testId="log-save"
             tone={saved ? "ink" : "accent"}
@@ -170,7 +181,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
             <ul className="space-y-2 pb-2" data-testid="log-history">
               <AnimatePresence initial={false}>
                 {history.map((log) => (
-                  <LogRow key={log.id} log={log} />
+                  <LogRow key={log.id} log={log} text={formatSet({ ...log, category: exercise.category }, unit)} />
                 ))}
               </AnimatePresence>
               {history.length === 0 && <li className="py-6 text-center text-sm text-mute">まだ記録はありません</li>}
@@ -191,7 +202,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LogRow({ log }: { log: LogEntry }) {
+function LogRow({ log, text }: { log: LogEntry; text: string }) {
   const removeLog = useStore((s) => s.removeLog);
   const x = useMotionValue(0);
   return (
@@ -221,9 +232,7 @@ function LogRow({ log }: { log: LogEntry }) {
         className="relative flex items-center justify-between rounded-2xl bg-white px-4 py-3"
       >
         <span className="text-sm font-semibold text-mute">{formatDate(log.at)}</span>
-        <span className="font-display text-lg font-bold">
-          {formatWeight(log.weight)} × {log.reps} × {log.sets}
-        </span>
+        <span className="font-display text-lg font-bold">{text}</span>
       </motion.div>
     </motion.li>
   );
@@ -354,8 +363,9 @@ export function AccountSheet({ open, onClose }: { open: boolean; onClose: () => 
   const statusText = { off: "", syncing: "同期中…", synced: "同期済み", error: "同期エラー" }[status];
 
   return (
-    <Sheet open={open} onClose={onClose} title="アカウント" testId="account-sheet">
+    <Sheet open={open} onClose={onClose} title="設定" testId="account-sheet">
       <div className="space-y-4 pt-2 pb-2">
+        <UnitToggle />
         {user ? (
           <>
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass flex items-center gap-3 rounded-2xl p-3">
@@ -385,5 +395,34 @@ export function AccountSheet({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
     </Sheet>
+  );
+}
+
+function UnitToggle() {
+  const unit = useStore((s) => s.unit);
+  const setUnit = useStore((s) => s.setUnit);
+  return (
+    <div className="glass flex items-center justify-between rounded-2xl py-2 pr-2 pl-4">
+      <span className="text-sm font-bold">重量の単位</span>
+      <div className="relative flex rounded-xl bg-slate-900/5 p-1" role="radiogroup" aria-label="重量の単位">
+        {(["kg", "lb"] as const).map((u) => (
+          <button
+            key={u}
+            type="button"
+            role="radio"
+            aria-checked={unit === u}
+            data-testid={`unit-${u}`}
+            onClick={() => {
+              haptic(8);
+              setUnit(u);
+            }}
+            className={`relative h-9 w-16 rounded-lg text-sm font-bold ${unit === u ? "text-white" : "text-mute"}`}
+          >
+            {unit === u && <motion.span layoutId="unit-pill" transition={spring} className="absolute inset-0 rounded-lg bg-ink" />}
+            <span className="relative">{u === "kg" ? "kg" : "lbs"}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

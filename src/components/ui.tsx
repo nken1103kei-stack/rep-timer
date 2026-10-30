@@ -2,6 +2,9 @@ import { AnimatePresence, motion, useDragControls } from "motion/react";
 import { Minus, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { haptic } from "../lib/feedback";
+import { useStore } from "../lib/store";
+import { category, displayWeight, fromUnit, type CategoryId } from "../lib/catalog";
+import { unitLabel } from "../lib/stats";
 
 export const spring = { type: "spring", stiffness: 420, damping: 32 } as const;
 
@@ -168,10 +171,60 @@ export function PrimaryButton({
   );
 }
 
-export const formatWeight = (w: number) => (w === 0 ? "自重" : `${w}kg`);
+type SetForm = { weight: number; reps: number; sets: number };
 
-const WEEK = ["日", "月", "火", "水", "木", "金", "土"];
-export const formatDate = (ms: number) => {
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}/${d.getDate()} (${WEEK[d.getDay()]})`;
-};
+export function WeightStepper({ value, onChange }: { value: number; onChange: (kg: number) => void }) {
+  const unit = useStore((s) => s.unit);
+  return (
+    <Stepper
+      label="重量"
+      unit={unitLabel(unit)}
+      step={unit === "kg" ? 2.5 : 5}
+      max={unit === "kg" ? 500 : 1100}
+      value={displayWeight(value, unit)}
+      onChange={(v) => onChange(fromUnit(v, unit))}
+      testId="weight"
+    />
+  );
+}
+
+/** Weight / reps / sets, or just minutes for cardio. */
+export function SetFields({ category, form, onChange }: { category: CategoryId; form: SetForm; onChange: (f: SetForm) => void }) {
+  if (category === "cardio") {
+    return (
+      <Stepper
+        label="時間"
+        unit="分"
+        min={1}
+        max={600}
+        step={5}
+        value={form.reps}
+        onChange={(reps) => onChange({ weight: 0, reps, sets: 1 })}
+        testId="minutes"
+      />
+    );
+  }
+  return (
+    <>
+      <WeightStepper value={form.weight} onChange={(weight) => onChange({ ...form, weight })} />
+      <div className="grid grid-cols-2 gap-3">
+        <Stepper label="回数" min={1} value={form.reps} onChange={(reps) => onChange({ ...form, reps })} />
+        <Stepper label="セット" min={1} max={99} value={form.sets} onChange={(sets) => onChange({ ...form, sets })} />
+      </div>
+    </>
+  );
+}
+
+export function CategoryBadge({ id, size = "sm" }: { id: CategoryId; size?: "sm" | "xs" }) {
+  const c = category(id);
+  return (
+    <span
+      data-testid="category-badge"
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full font-bold ${size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-1.5 text-[10px]"}`}
+      style={{ background: `${c.color}22`, color: c.id === "abs" ? "#9a7a00" : c.color }}
+    >
+      <span className="size-1.5 rounded-full" style={{ background: c.color }} />
+      {c.label}
+    </span>
+  );
+}

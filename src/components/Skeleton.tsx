@@ -13,7 +13,10 @@ export function Skeleton() {
     >
       <div className="flex h-16 items-center justify-between pt-[env(safe-area-inset-top)]">
         <div className="skeleton h-7 w-24 rounded-lg" />
-        <div className="skeleton size-10 rounded-full" />
+        <div className="flex gap-2">
+          <div className="skeleton size-10 rounded-full" />
+          <div className="skeleton size-10 rounded-full" />
+        </div>
       </div>
       <div className="glass mt-1 rounded-[28px] p-4">
         <div className="flex gap-2">
@@ -28,7 +31,6 @@ export function Skeleton() {
           </div>
           <div className="skeleton size-20 rounded-full" />
         </div>
-        <div className="skeleton mt-4 h-11 w-full rounded-2xl" />
       </div>
       <div className="mt-7 flex items-center justify-between">
         <div className="skeleton h-6 w-24 rounded-lg" />

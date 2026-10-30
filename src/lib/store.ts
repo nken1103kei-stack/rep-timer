@@ -1,17 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppData, Exercise, LogEntry, Preset } from "./types";
+import { guessCategory, isCategoryId, type CategoryId, type Unit } from "./catalog";
 
 export const uid = () => crypto.randomUUID().slice(0, 12);
 
-export const COLORS = ["#FF4F00", "#00A3FF", "#14C38E", "#FFB800", "#8B5CF6", "#FF2D55"];
-
 const seed = (): AppData => ({
   exercises: [
-    { id: uid(), name: "ベンチプレス", weight: 60, reps: 10, sets: 3, color: COLORS[0] },
-    { id: uid(), name: "スクワット", weight: 80, reps: 8, sets: 3, color: COLORS[1] },
-    { id: uid(), name: "デッドリフト", weight: 100, reps: 5, sets: 3, color: COLORS[2] },
-    { id: uid(), name: "懸垂", weight: 0, reps: 10, sets: 3, color: COLORS[3] },
+    { id: uid(), name: "ベンチプレス", category: "chest", weight: 60, reps: 10, sets: 3 },
+    { id: uid(), name: "スクワット", category: "legs", weight: 80, reps: 8, sets: 3 },
+    { id: uid(), name: "デッドリフト", category: "back", weight: 100, reps: 5, sets: 3 },
+    { id: uid(), name: "ランニング", category: "cardio", weight: 0, reps: 30, sets: 1 },
   ],
   logs: [],
   presets: [
@@ -21,7 +20,25 @@ const seed = (): AppData => ({
     { id: uid(), name: "REST", work: 0, rest: 60, rounds: 1 },
     { id: uid(), name: "REST", work: 0, rest: 90, rounds: 1 },
   ],
+  customLibrary: [],
+  unit: "kg",
 });
+
+/** Brings data from older app versions (local or synced) up to the current shape. */
+export function normalizeData(raw: Partial<AppData> & Record<string, unknown>): AppData {
+  const exercises = (raw.exercises ?? []).map((e) => {
+    const { id, name, weight, reps, sets } = e as Exercise;
+    const category: CategoryId = isCategoryId((e as Exercise).category) ? (e as Exercise).category : guessCategory(name);
+    return { id, name, category, weight, reps, sets };
+  });
+  return {
+    exercises,
+    logs: raw.logs ?? [],
+    presets: raw.presets?.length ? raw.presets : seed().presets,
+    customLibrary: raw.customLibrary ?? [],
+    unit: raw.unit === "lb" ? "lb" : "kg",
+  };
+}
 
 type State = AppData & {
   updatedAt: number;
@@ -30,15 +47,19 @@ type State = AppData & {
   selectExercise: (id: string | null) => void;
   selectPreset: (id: string) => void;
   addExercise: (ex: Omit<Exercise, "id">) => string;
+  addExercises: (list: Omit<Exercise, "id">[]) => void;
   updateExercise: (id: string, patch: Partial<Exercise>) => void;
   removeExercise: (id: string) => { exercise: Exercise; index: number } | null;
   restoreExercise: (exercise: Exercise, index: number) => void;
   purgeLogs: (exerciseId: string) => void;
   reorderExercises: (exercises: Exercise[]) => void;
-  addLog: (log: Omit<LogEntry, "id" | "at">) => void;
+  addLog: (log: Omit<LogEntry, "id" | "at" | "name" | "category">) => void;
   removeLog: (id: string) => void;
   savePreset: (preset: Omit<Preset, "id"> & { id?: string }) => string;
   removePreset: (id: string) => void;
+  addCustomTemplate: (category: CategoryId, name: string) => void;
+  removeCustomTemplate: (id: string) => void;
+  setUnit: (unit: Unit) => void;
   replaceData: (data: AppData, updatedAt: number) => void;
 };
 
@@ -60,6 +81,8 @@ export const useStore = create<State>()(
           set((s) => ({ exercises: [...s.exercises, { ...ex, id }], ...touched() }));
           return id;
         },
+        addExercises: (list) =>
+          set((s) => ({ exercises: [...s.exercises, ...list.map((ex) => ({ ...ex, id: uid() }))], ...touched() })),
         updateExercise: (id, patch) =>
           set((s) => ({ exercises: s.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)), ...touched() })),
         removeExercise: (id) => {
@@ -85,14 +108,17 @@ export const useStore = create<State>()(
         },
         reorderExercises: (exercises) => set({ exercises, ...touched() }),
         addLog: (log) =>
-          set((s) => ({
-            logs: [{ ...log, id: uid(), at: Date.now() }, ...s.logs],
-            // The latest record becomes the menu's default for next time.
-            exercises: s.exercises.map((e) =>
-              e.id === log.exerciseId ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets } : e,
-            ),
-            ...touched(),
-          })),
+          set((s) => {
+            const ex = s.exercises.find((e) => e.id === log.exerciseId);
+            return {
+              logs: [{ ...log, id: uid(), at: Date.now(), name: ex?.name, category: ex?.category }, ...s.logs],
+              // The latest record becomes the menu's default for next time.
+              exercises: s.exercises.map((e) =>
+                e.id === log.exerciseId ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets } : e,
+              ),
+              ...touched(),
+            };
+          }),
         removeLog: (id) => set((s) => ({ logs: s.logs.filter((l) => l.id !== id), ...touched() })),
         savePreset: ({ id, ...preset }) => {
           const presetId = id ?? uid();
@@ -114,21 +140,46 @@ export const useStore = create<State>()(
               ...touched(),
             };
           }),
+        addCustomTemplate: (category, name) =>
+          set((s) =>
+            s.customLibrary.some((t) => t.category === category && t.name === name)
+              ? s
+              : { customLibrary: [...s.customLibrary, { id: uid(), category, name }], ...touched() },
+          ),
+        removeCustomTemplate: (id) =>
+          set((s) => ({ customLibrary: s.customLibrary.filter((t) => t.id !== id), ...touched() })),
+        setUnit: (unit) => set({ unit, ...touched() }),
         replaceData: (data, updatedAt) =>
-          set((s) => ({
-            ...data,
-            updatedAt,
-            selectedExerciseId: data.exercises.some((e) => e.id === s.selectedExerciseId) ? s.selectedExerciseId : null,
-            selectedPresetId: data.presets.some((p) => p.id === s.selectedPresetId)
-              ? s.selectedPresetId
-              : (data.presets[0]?.id ?? null),
-          })),
+          set((s) => {
+            const next = normalizeData(data);
+            return {
+              ...next,
+              updatedAt,
+              selectedExerciseId: next.exercises.some((e) => e.id === s.selectedExerciseId) ? s.selectedExerciseId : null,
+              selectedPresetId: next.presets.some((p) => p.id === s.selectedPresetId)
+                ? s.selectedPresetId
+                : (next.presets[0]?.id ?? null),
+            };
+          }),
       };
     },
-    { name: "rep-timer", version: 1 },
+    {
+      name: "rep-timer",
+      version: 2,
+      migrate: (persisted, version) => {
+        const s = persisted as Record<string, unknown>;
+        return version < 2 ? { ...s, ...normalizeData(s) } : s;
+      },
+    },
   ),
 );
 
-export const pickData = (s: AppData): AppData => ({ exercises: s.exercises, logs: s.logs, presets: s.presets });
+export const pickData = (s: AppData): AppData => ({
+  exercises: s.exercises,
+  logs: s.logs,
+  presets: s.presets,
+  customLibrary: s.customLibrary,
+  unit: s.unit,
+});
 
 export const lastLogFor = (logs: LogEntry[], exerciseId: string) => logs.find((l) => l.exerciseId === exerciseId);
