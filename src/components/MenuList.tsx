@@ -20,6 +20,7 @@ import { lastLogFor, useStore } from "../lib/store";
 import type { Exercise } from "../lib/types";
 import { haptic } from "../lib/feedback";
 import { CategoryBadge, spring } from "./ui";
+import { AdSlot } from "./Pro";
 import { category } from "../lib/catalog";
 import {
   dayKey,
@@ -146,6 +147,8 @@ export function MenuList({
           <Plus size={18} /> メニューを追加
         </motion.button>
       )}
+
+      <AdSlot className="mt-5" />
     </section>
   );
 }

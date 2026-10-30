@@ -23,7 +23,21 @@
 
 部位ごとの色: 肩=アンバー、胸=ピンク、背中=ブルー、腕=パープル、脚=グリーン、腹筋=イエロー、有酸素=ティール、その他=グレー
 
-ログインしなくても全機能が使えます（端末内に保存）。Googleでログインするとクラウドに同期されます。
+ログインしなくても記録機能はすべて使えます（端末内に保存）。Googleでログインするとクラウドに同期されます。
+
+## プラン
+
+| | 無料 | Pro（月額サブスク） |
+| --- | --- | --- |
+| 記録・履歴・カスタム種目・カレンダー・共有 | ○ 無制限 | ○ |
+| CSV 書き出し / 読み込み（Strong・Hevy・FitNotes 対応） | ○ | ○ |
+| 広告 | あり（音の出ないバナーのみ。タイマー画面には出ない） | なし |
+| セット種類（W/N/D）別の休憩タイマー（休憩中も次セットとプレートを表示） | – | ○ |
+| スーパーセットタイマー（A → 移動 → B → 本休憩） | – | ○ |
+| テンポ・メトロノーム（下ろす/止める/挙げる/締める）と TUT | – | ○ |
+| 部位ヒートマップ・推定1RMグラフ | – | ○ |
+
+Pro は Google アカウントに紐づきます。決済は Stripe Checkout、解約は Stripe のカスタマーポータルから行い、Webhook で D1 の `subscriptions` に反映します。
 
 ## 構成
 
@@ -33,8 +47,12 @@ src/            React フロントエンド
   lib/catalog.ts  部位・色・種目ライブラリ・単位換算
   lib/stats.ts    集計・表示フォーマット・共有テキスト
   lib/store.ts    データストア（localStorage 永続化）
-  lib/sync.ts     認証とクラウド同期
+  lib/sync.ts     認証とクラウド同期・プラン状態
+  lib/csv.ts      CSV 書き出し / 読み込み
+  lib/plates.ts   プレート計算
+  lib/analytics.ts 推定1RM・部位別セット数
 worker/         Cloudflare Worker（/api/*）
+  billing.ts      Stripe 連携（Checkout・ポータル・Webhook 署名検証）
 migrations/     D1 スキーマ
 tests/unit      Vitest
 tests/e2e       Playwright（Pixel 7 エミュレーション）
@@ -51,6 +69,7 @@ npm run e2e          # E2E テスト
 ```
 
 `.dev.vars` に `SESSION_SECRET=...` を置いてください（Git には含めません）。
+ローカルで課金の流れを試すときは `.dev.vars` に `DEV_MODE=1` を追加します。localhost からのアクセスに限り、Stripe を使わずに「登録 → Pro → 解約」を再現できます（本番では絶対に設定しないでください）。
 
 ## デプロイ
 
@@ -62,6 +81,26 @@ npm run deploy
 ```
 
 Google ログインを有効にするには、Google Cloud Console で「OAuth クライアント ID（ウェブアプリケーション）」を作成し、承認済みの JavaScript 生成元にデプロイ先 URL（と `http://localhost:5173`）を登録して、そのクライアント ID を `wrangler.jsonc` の `GOOGLE_CLIENT_ID` に設定して再デプロイします。クライアントシークレットは不要です。
+
+### Pro（Stripe）を有効にする
+
+1. Stripe ダッシュボードで商品「REPS Pro」と月額の価格（例: 380円）を作成し、価格 ID（`price_...`）を控える
+2. 「開発者 → Webhook」でエンドポイント `https://<デプロイ先>/api/billing/webhook` を追加し、イベント `checkout.session.completed`・`customer.subscription.updated`・`customer.subscription.deleted` を選んで署名シークレット（`whsec_...`）を控える
+3. 「設定 → Billing → カスタマーポータル」を有効にする（解約・支払い方法の変更用）
+4. 以下を設定して再デプロイ
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY       # sk_live_...（まずは sk_test_... で確認）
+npx wrangler secret put STRIPE_PRICE_ID
+npx wrangler secret put STRIPE_WEBHOOK_SECRET
+npm run deploy
+```
+
+3つが揃うまでアプリの登録ボタンは「準備中」と表示されます。表示価格は `wrangler.jsonc` の `vars` に `PRO_PRICE_LABEL`（例: `"月額380円"`）で変更できます。
+
+### 広告（Google AdSense）を有効にする
+
+AdSense の審査に通ったら、`wrangler.jsonc` の `vars` に `ADSENSE_CLIENT`（`ca-pub-...`）と `ADSENSE_SLOT`（広告ユニット ID）を設定して再デプロイします。未設定の間は「Pro なら広告なし」の自社バナーが表示されます。
 
 ## 技術選定の理由
 

@@ -1,11 +1,14 @@
 import { AnimatePresence, motion, useDragControls } from "motion/react";
-import { Minus, Plus, X } from "lucide-react";
+import { Minus, Plus, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { haptic } from "../lib/feedback";
 import { useStore } from "../lib/store";
 import { category, displayWeight, fromUnit, type CategoryId } from "../lib/catalog";
 import { unitLabel } from "../lib/stats";
 import type { SetEntry } from "../lib/types";
+import { nextSetType, SET_TYPE } from "../lib/record";
+import { openProSheet } from "../lib/proSheet";
+import { usePro } from "../lib/sync";
 import type { CardioForm } from "../lib/record";
 
 export const spring = { type: "spring", stiffness: 420, damping: 32 } as const;
@@ -272,9 +275,23 @@ export function SetFields({ category, form, onChange }: { category: CategoryId; 
   );
 }
 
-/** One row per set, each with its own weight and reps. */
-export function SetRows({ sets, onChange }: { sets: SetEntry[]; onChange: (s: SetEntry[]) => void }) {
+/**
+ * One row per set, each with its own weight and reps.
+ * Pro: tap the set label to mark it W (warm-up) / N (working) / D (drop); the timer button starts that type's rest.
+ */
+export function SetRows({
+  sets,
+  onChange,
+  onRest,
+  resting,
+}: {
+  sets: SetEntry[];
+  onChange: (s: SetEntry[]) => void;
+  onRest?: (i: number) => void;
+  resting?: number | null;
+}) {
   const unit = useStore((s) => s.unit);
+  const pro = usePro();
   const update = (i: number, patch: Partial<SetEntry>) => onChange(sets.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   return (
     <div className="space-y-2" data-testid="set-rows">
@@ -290,7 +307,27 @@ export function SetRows({ sets, onChange }: { sets: SetEntry[]; onChange: (s: Se
             data-testid="set-row"
           >
             <div className="glass flex items-center gap-2 rounded-2xl py-1.5 pr-1.5 pl-3">
-              <span className="w-10 shrink-0 font-display text-sm font-bold text-mute">SET {i + 1}</span>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.85 }}
+                aria-label={`${i + 1}セット目の種類`}
+                data-testid="set-type"
+                data-type={set.type ?? "N"}
+                onClick={() => {
+                  haptic(8);
+                  if (!pro) openProSheet();
+                  else update(i, { type: nextSetType(set.type ?? "N") });
+                }}
+                className="flex w-10 shrink-0 flex-col items-center leading-none"
+              >
+                <span className="font-display text-[11px] font-bold text-mute">SET {i + 1}</span>
+                <span
+                  className="mt-0.5 rounded px-1 font-display text-[10px] font-extrabold text-white"
+                  style={{ background: SET_TYPE[set.type ?? "N"].color, opacity: pro || set.type ? 1 : 0.35 }}
+                >
+                  {SET_TYPE[set.type ?? "N"].short}
+                </span>
+              </motion.button>
               <label className="flex flex-1 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
                 <NumberInput
                   label={`${i + 1}セット目の重量`}
@@ -302,7 +339,7 @@ export function SetRows({ sets, onChange }: { sets: SetEntry[]; onChange: (s: Se
                 <span className="text-xs font-semibold text-mute">{unitLabel(unit)}</span>
               </label>
               <span className="text-mute">×</span>
-              <label className="flex w-24 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
+              <label className="flex w-20 items-baseline justify-center gap-1 rounded-xl bg-white/70 py-1">
                 <NumberInput
                   label={`${i + 1}セット目の回数`}
                   value={set.reps}
@@ -313,6 +350,18 @@ export function SetRows({ sets, onChange }: { sets: SetEntry[]; onChange: (s: Se
                 />
                 <span className="text-xs font-semibold text-mute">回</span>
               </label>
+              {onRest && (
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.85 }}
+                  aria-label={`${i + 1}セット目の後に休憩`}
+                  data-testid="set-rest"
+                  onClick={() => onRest(i)}
+                  className={`grid size-9 shrink-0 place-items-center rounded-full ${resting === i ? "bg-rest text-white" : "bg-rest/10 text-rest"}`}
+                >
+                  <Timer size={16} strokeWidth={2.4} />
+                </motion.button>
+              )}
               <motion.button
                 type="button"
                 whileTap={{ scale: 0.85 }}

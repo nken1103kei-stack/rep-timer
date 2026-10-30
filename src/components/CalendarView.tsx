@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { AdSlot, ProBadge, ProLock } from "./Pro";
+import { BodyHeatmap } from "./Charts";
+import { setsByCategory } from "../lib/analytics";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight, Share2, X } from "lucide-react";
 import { useStore } from "../lib/store";
@@ -135,6 +138,17 @@ export function CalendarView({ onClose, onShared }: { onClose: () => void; onSha
             ))}
           </div>
         </section>
+
+        <section className="glass mt-4 rounded-[28px] p-4" data-testid="heatmap-section">
+          <div className="mb-2 flex items-center gap-2 text-sm font-extrabold">
+            部位ヒートマップ <span className="text-xs font-bold text-mute">セット数</span> <ProBadge />
+          </div>
+          <ProLock label="部位ヒートマップは Pro で使えます" testId="heatmap-lock">
+            <BodyHeatmap counts={setsByCategory(monthLogs)} />
+          </ProLock>
+        </section>
+
+        <AdSlot className="mt-4" />
 
         <section className="glass mt-4 overflow-hidden rounded-[28px] p-3">
           <div className="grid grid-cols-7 text-center text-[11px] font-bold text-mute">

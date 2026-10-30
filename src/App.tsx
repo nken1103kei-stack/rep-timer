@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Undo2 } from "lucide-react";
 import { useStore } from "./lib/store";
-import { bootstrap, useSession } from "./lib/sync";
+import { bootstrap, refreshPlan, useSession } from "./lib/sync";
 import { unlockAudio } from "./lib/feedback";
 import { cardioTimer } from "./lib/record";
 import type { Exercise, Preset } from "./lib/types";
@@ -16,6 +16,7 @@ import { TimerOverlay } from "./components/TimerOverlay";
 import { LibrarySheet } from "./components/LibrarySheet";
 import { CalendarView } from "./components/CalendarView";
 import { spring } from "./components/ui";
+import { openProSheet, ProSheet } from "./components/Pro";
 
 type SheetState =
   | { type: "library" }
@@ -39,7 +40,13 @@ export default function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    void bootstrap();
+    // Back from Stripe Checkout / the customer portal.
+    const back = new URLSearchParams(location.search).get("pro");
+    if (back) history.replaceState(null, "", location.pathname);
+    void bootstrap().then(async () => {
+      if (back === "success" || back === "portal") await refreshPlan();
+      if (back === "success" && useSession.getState().plan.pro) showToast({ text: "Pro になりました。ありがとうございます！" });
+    });
     const t = setTimeout(() => setMinElapsed(true), MIN_SKELETON_MS);
     return () => clearTimeout(t);
   }, []);
@@ -77,6 +84,8 @@ export default function App() {
     // A selected cardio menu drives the timer with its own work/rest/sets.
     const preset =
       exercise?.category === "cardio" ? cardioTimer(exercise) : (s.presets.find((p) => p.id === s.selectedPresetId) ?? s.presets[0]);
+    // Superset and tempo timers stay saved after a plan ends, but running them needs Pro.
+    if ("kind" in preset && preset.kind && preset.kind !== "interval" && !useSession.getState().plan.pro) return openProSheet();
     setRun({ preset, exercise });
   };
 
@@ -100,7 +109,7 @@ export default function App() {
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}
           >
             {[
-              <Header key="h" onAccount={() => setSheet({ type: "account" })} onCalendar={() => setCalendarOpen(true)} />,
+              <Header key="h" onAccount={() => setSheet({ type: "account" })} onCalendar={() => setCalendarOpen(true)} onPro={openProSheet} />,
               <QuoteCard key="q" />,
               <TimerPanel key="t" onStart={start} onEditPreset={(id) => setSheet({ type: "preset", id: id ?? null })} />,
               <MenuList
@@ -134,6 +143,7 @@ export default function App() {
       />
       <PresetEditor open={sheet?.type === "preset"} id={sheet?.type === "preset" ? sheet.id : null} onClose={close} />
       <AccountSheet open={sheet?.type === "account"} onClose={close} />
+      <ProSheet onLogin={() => setSheet({ type: "account" })} />
 
       <AnimatePresence>
         {calendarOpen && (

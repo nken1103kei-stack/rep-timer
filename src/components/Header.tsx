@@ -1,10 +1,12 @@
 import { motion } from "motion/react";
 import { CalendarDays, User as UserIcon } from "lucide-react";
-import { useSession } from "../lib/sync";
+import { usePro, useSession } from "../lib/sync";
+import { Crown } from "lucide-react";
 
 const dot = { off: "", syncing: "bg-ready animate-pulse", synced: "bg-go", error: "bg-danger" } as const;
 
-export function Header({ onAccount, onCalendar }: { onAccount: () => void; onCalendar: () => void }) {
+export function Header({ onAccount, onCalendar, onPro }: { onAccount: () => void; onCalendar: () => void; onPro: () => void }) {
+  const pro = usePro();
   const user = useSession((s) => s.user);
   const status = useSession((s) => s.status);
   return (
@@ -13,6 +15,20 @@ export function Header({ onAccount, onCalendar }: { onAccount: () => void; onCal
         REPS<span className="text-accent">.</span>
       </div>
       <div className="flex gap-2">
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.9 }}
+          onClick={onPro}
+          aria-label="REPS Pro"
+          data-testid="pro-button"
+          data-pro={pro}
+          className={`flex h-10 items-center gap-1 rounded-full px-3 text-xs font-extrabold tracking-wider ${
+            pro ? "bg-gradient-to-r from-[#ff4f00] to-[#ff9f0a] text-white shadow-[0_8px_20px_-8px_rgb(255_79_0/0.8)]" : "glass text-ink"
+          }`}
+        >
+          <Crown size={14} strokeWidth={2.6} />
+          PRO
+        </motion.button>
         <motion.button
           type="button"
           whileTap={{ scale: 0.9 }}

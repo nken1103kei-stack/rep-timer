@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Activity, Play, Plus, X } from "lucide-react";
 import { useStore } from "../lib/store";
-import { buildSegments, formatDuration, totalMs } from "../lib/timer";
+import { buildSegments, formatDuration, formatTempo, totalMs, tutOf } from "../lib/timer";
+import { ProBadge } from "./Pro";
 import type { Preset } from "../lib/types";
 import { haptic } from "../lib/feedback";
 import { spring } from "./ui";
@@ -10,7 +11,13 @@ import { cardioTimer } from "../lib/record";
 import { formatSet } from "../lib/stats";
 
 export const presetLabel = (p: Preset) =>
-  p.work === 0 ? formatDuration(p.rest * 1000) : `${p.work}/${p.rest}`;
+  p.kind === "superset"
+    ? `A${p.work}/B${p.work2 ?? p.work}`
+    : p.kind === "tempo"
+      ? formatTempo(p.tempo ?? [3, 1, 2, 0])
+      : p.work === 0
+        ? formatDuration(p.rest * 1000)
+        : `${p.work}/${p.rest}`;
 
 export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onEditPreset: (id?: string) => void }) {
   const presets = useStore((s) => s.presets);
@@ -78,7 +85,7 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
       <div className="mt-4 flex items-center justify-between gap-3">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
-            key={timer.id + timer.work + timer.rest + timer.rounds}
+            key={[timer.id, timer.work, timer.rest, timer.rounds, preset.kind, preset.work2, preset.transition, preset.reps, preset.tempo?.join()].join(":")}
             initial={{ opacity: 0, y: 14, filter: "blur(4px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, y: -14, filter: "blur(4px)" }}
@@ -92,6 +99,20 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
                 <Big value={cardio.rest ?? 0} label="REST 分" color="text-rest" />
                 <Big value={`×${timer.rounds}`} label="SETS" color="text-ink" />
               </div>
+            ) : preset.kind === "superset" ? (
+              <div className="flex items-end gap-3">
+                <Big value={preset.work} label="A" small color="text-accent" />
+                <Big value={preset.transition ?? 0} label="移動" small color="text-ready" />
+                <Big value={preset.work2 ?? preset.work} label="B" small color="text-accent" />
+                <Big value={preset.rest} label="REST" small color="text-rest" />
+                <Big value={`×${preset.rounds}`} label="SETS" small color="text-ink" />
+              </div>
+            ) : preset.kind === "tempo" ? (
+              <div className="flex items-end gap-3">
+                <Big value={formatTempo(preset.tempo ?? [3, 1, 2, 0])} label="TEMPO" small color="text-[#BF5AF2]" />
+                <Big value={`${preset.reps ?? 10}回`} label="REPS" small color="text-accent" />
+                <Big value={`×${preset.rounds}`} label="SETS" small color="text-ink" />
+              </div>
             ) : preset.work === 0 ? (
               <Big value={formatDuration(preset.rest * 1000)} label="REST" color="text-rest" />
             ) : (
@@ -101,7 +122,11 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
                 <Big value={`×${preset.rounds}`} label="SETS" color="text-ink" />
               </div>
             )}
-            <div className="mt-1 text-xs font-semibold text-mute">TOTAL {formatDuration(total)}</div>
+            <div className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-mute">
+              TOTAL {formatDuration(total)}
+              {!cardio && preset.kind === "tempo" && <span data-testid="summary-tut">· TUT {tutOf(preset.tempo ?? [3, 1, 2, 0], preset.reps ?? 10)}秒/セット</span>}
+              {!cardio && preset.kind && preset.kind !== "interval" && <ProBadge />}
+            </div>
           </motion.div>
         </AnimatePresence>
 
@@ -160,10 +185,10 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
   );
 }
 
-function Big({ value, label, color }: { value: string | number; label: string; color: string }) {
+function Big({ value, label, color, small }: { value: string | number; label: string; color: string; small?: boolean }) {
   return (
     <div className="flex flex-col">
-      <span className={`font-display text-[52px] leading-[0.9] font-extrabold italic ${color}`}>{value}</span>
+      <span className={`font-display leading-[0.9] font-extrabold italic ${small ? "text-[34px]" : "text-[52px]"} ${color}`}>{value}</span>
       <span className="text-[10px] font-bold tracking-[0.16em] text-mute">{label}</span>
     </div>
   );

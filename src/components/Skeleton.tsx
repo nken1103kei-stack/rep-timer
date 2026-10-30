@@ -14,6 +14,7 @@ export function Skeleton() {
       <div className="flex h-16 items-center justify-between pt-[env(safe-area-inset-top)]">
         <div className="skeleton h-7 w-24 rounded-lg" />
         <div className="flex gap-2">
+          <div className="skeleton h-10 w-[68px] rounded-full" />
           <div className="skeleton size-10 rounded-full" />
           <div className="skeleton size-10 rounded-full" />
         </div>

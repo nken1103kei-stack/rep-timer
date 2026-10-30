@@ -2,24 +2,32 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Pause, Play, SkipForward, X } from "lucide-react";
 import { useStore } from "../lib/store";
-import { buildSegments, formatClock, formatDuration, segmentStart, timerAt, type Phase } from "../lib/timer";
+import { buildSegments, describeTimer, formatClock, formatDuration, isTempoPhase, segmentStart, timerAt, tutOf, type Phase } from "../lib/timer";
 import type { Exercise, Preset } from "../lib/types";
 import { beep, haptic, keepAwake } from "../lib/feedback";
 import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
 import { initialRecord, toLog } from "../lib/record";
 
-const PHASE: Record<Phase, { label: string; color: string; tint: string }> = {
+const PHASE: Record<Phase, { label: string; sub?: string; color: string; tint: string }> = {
   prepare: { label: "READY", color: "#FFB800", tint: "rgb(255 184 0 / 0.28)" },
   work: { label: "WORK", color: "#FF4F00", tint: "rgb(255 79 0 / 0.26)" },
+  transition: { label: "SWITCH", sub: "次の種目へ", color: "#FFB800", tint: "rgb(255 184 0 / 0.28)" },
   rest: { label: "REST", color: "#00A3FF", tint: "rgb(0 163 255 / 0.24)" },
+  ecc: { label: "DOWN", sub: "下ろす", color: "#BF5AF2", tint: "rgb(191 90 242 / 0.24)" },
+  bottom: { label: "HOLD", sub: "止める", color: "#FFB800", tint: "rgb(255 184 0 / 0.26)" },
+  con: { label: "UP", sub: "挙げる", color: "#FF4F00", tint: "rgb(255 79 0 / 0.26)" },
+  top: { label: "SQUEEZE", sub: "締める", color: "#14C38E", tint: "rgb(20 195 142 / 0.24)" },
   done: { label: "DONE", color: "#14C38E", tint: "rgb(20 195 142 / 0.26)" },
 };
+
+/** Metronome tones: each tempo phase has its own pitch so you can follow it with your eyes closed. */
+const TEMPO_TONE = { ecc: 523, bottom: 698, con: 988, top: 1319 } as const;
 
 const R = 128;
 const C = 2 * Math.PI * R;
 
 export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; exercise: Exercise | null; onClose: () => void }) {
-  const segments = useMemo(() => buildSegments({ prepare: preset.work > 0 ? 5 : 0, ...preset }), [preset]);
+  const segments = useMemo(() => buildSegments({ prepare: preset.work > 0 || preset.kind === "tempo" ? 5 : 0, ...preset }), [preset]);
   const startRef = useRef(Date.now());
   const pausedTotal = useRef(0);
   const [pausedAt, setPausedAt] = useState<number | null>(null);
@@ -52,18 +60,31 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
     if (st.phase === "done") {
       beep(1320, 0.5);
       haptic([60, 60, 60, 60, 200]);
+    } else if (isTempoPhase(st.phase)) {
+      beep(TEMPO_TONE[st.phase], 0.14, 0.3);
+      haptic(st.phase === "con" ? [30, 30, 30] : st.phase === "ecc" ? 70 : 25);
     } else {
       beep(st.phase === "work" ? 1175 : 660, 0.35);
       haptic(st.phase === "work" ? [80, 40, 80] : 120);
     }
   }, [st.index, st.phase]);
 
+  // Countdown ticks for the last three seconds; inside a tempo phase, a soft tick every second instead.
+  const lastSec = useRef(sec);
   useEffect(() => {
-    if (st.phase !== "done" && pausedAt === null && sec > 0 && sec <= 3) {
+    const changed = lastSec.current !== sec;
+    lastSec.current = sec;
+    if (st.phase === "done" || pausedAt !== null || sec <= 0) return;
+    if (isTempoPhase(st.phase)) {
+      if (changed && sec < Math.ceil(st.segmentMs / 1000)) {
+        beep(440, 0.05, 0.12);
+        haptic(10);
+      }
+    } else if (sec <= 3) {
       beep(880, 0.09);
       haptic(20);
     }
-  }, [sec, st.phase, pausedAt]);
+  }, [sec, st.phase, st.segmentMs, pausedAt]);
 
   useEffect(() => {
     if (st.phase === "done") void keepAwake(false);
@@ -111,11 +132,7 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
           <div className="min-w-0">
             <div className="truncate text-sm font-bold">{exercise?.name ?? preset.name}</div>
             <div className="font-display text-xs font-semibold text-mute">
-              {exercise?.category === "cardio"
-                ? `${preset.work / 60}分 / 休憩${preset.rest / 60}分 × ${preset.rounds}`
-                : preset.work > 0
-                  ? `${preset.work}/${preset.rest} × ${preset.rounds}`
-                  : `REST ${formatDuration(preset.rest * 1000)}`}
+              {exercise?.category === "cardio" ? `${preset.work / 60}分 / 休憩${preset.rest / 60}分 × ${preset.rounds}` : describeTimer(preset)}
             </div>
           </div>
           <motion.button
@@ -161,7 +178,13 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
                     data-testid="timer-phase"
                   >
                     {meta.label}
+                    {st.label ? ` ${st.label}` : ""}
                   </motion.div>
+                  {meta.sub && (
+                    <div className="text-xs font-bold text-mute" data-testid="timer-sub">
+                      {meta.sub}
+                    </div>
+                  )}
                   <div className="relative h-[120px] overflow-hidden" data-testid="timer-clock" data-sec={sec} aria-live="polite">
                     <AnimatePresence mode="popLayout" initial={false}>
                       <motion.div
@@ -176,6 +199,11 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
                       </motion.div>
                     </AnimatePresence>
                   </div>
+                  {st.rep !== undefined && (
+                    <div className="font-display text-lg font-extrabold" data-testid="timer-rep">
+                      REP {st.rep} / {preset.reps}
+                    </div>
+                  )}
                   {st.rounds > 1 && (
                     <div className="font-display text-xl font-bold text-mute" data-testid="timer-round">
                       {st.round} / {st.rounds}
@@ -236,9 +264,13 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
   const lastLog = useStore((s) => s.logs.find((l) => l.exerciseId === exercise?.id));
   const cardio = exercise?.category === "cardio";
   // Interval rounds become sets; a cardio menu's own timer settings are the record.
-  const [form, setForm] = useState(() =>
-    exercise ? initialRecord(exercise, lastLog, !cardio && preset.work > 0 ? preset.rounds : undefined) : null,
-  );
+  const tempo = preset.kind === "tempo" ? preset.tempo : undefined;
+  const [form, setForm] = useState(() => {
+    if (!exercise) return null;
+    const timed = !cardio && (preset.work > 0 || !!tempo);
+    const record = initialRecord(exercise, lastLog, timed ? preset.rounds : undefined);
+    return tempo ? { ...record, sets: record.sets.map((x) => ({ ...x, reps: preset.reps ?? x.reps })) } : record;
+  });
   return (
     <motion.div
       className="flex flex-1 flex-col"
@@ -258,6 +290,11 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
         </motion.div>
         <div className="mt-4 font-display text-5xl font-extrabold italic">DONE</div>
         <div className="font-display text-lg font-semibold text-mute">{formatDuration(totalMs)}</div>
+        {tempo && (
+          <div className="mt-1 text-xs font-bold text-mute" data-testid="done-tut">
+            TUT {tutOf(tempo, preset.reps ?? 10)}秒 / セット
+          </div>
+        )}
       </div>
       <div className="no-scrollbar mt-auto -mx-1 max-h-[58dvh] space-y-3 overflow-y-auto px-1 pt-4">
         {exercise && (
@@ -271,7 +308,7 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
             <PrimaryButton
               testId="record-save"
               onClick={() => {
-                if (form) addLog(toLog(exercise, form));
+                if (form) addLog({ ...toLog(exercise, form), ...(tempo ? { tempo } : {}) });
                 onClose();
               }}
             >

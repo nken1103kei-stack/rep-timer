@@ -1,6 +1,17 @@
 import { setsOf } from "./stats";
 import type { Exercise, LogEntry, SetEntry } from "./types";
 
+import type { SetType } from "./types";
+
+export const SET_TYPE: Record<SetType, { label: string; short: string; color: string }> = {
+  W: { label: "ウォームアップ", short: "W", color: "#E0A100" },
+  N: { label: "メイン", short: "N", color: "#0b0c0f" },
+  D: { label: "ドロップ", short: "D", color: "#BF5AF2" },
+};
+
+/** Tap order on the set label: N → W → D → N. */
+export const nextSetType = (t: SetType | undefined): SetType => (t === "W" ? "D" : t === "D" ? "N" : "W");
+
 export type CardioForm = { reps: number; rest: number; sets: number };
 export type RecordForm = { sets: SetEntry[]; cardio: CardioForm };
 

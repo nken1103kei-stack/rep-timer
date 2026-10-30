@@ -85,12 +85,23 @@ export const LIBRARY: Record<Exclude<CategoryId, "other">, Template[]> = {
 export const DEFAULT_TEMPLATE = (cat: CategoryId): Template =>
   cat === "cardio" ? { name: "", weight: 0, reps: 30, sets: 1, rest: 0 } : { name: "", weight: 20, reps: 10, sets: 3 };
 
-/** Best-effort category for menus created before categories existed. */
+/** Keywords for names outside the library (older menus, Strong / Hevy / FitNotes imports). First match wins. */
+const KEYWORDS: [CategoryId, RegExp][] = [
+  ["cardio", /run|jog|walk|bike|cycl|row(ing)? machine|elliptical|treadmill|swim|jump rope|ランニング|ジョギング|ウォーク|バイク|水泳|縄跳び/i],
+  ["abs", /crunch|plank|sit ?up|ab |abs|leg raise|クランチ|プランク|腹/i],
+  ["legs", /squat|leg|lunge|calf|deadlift|hip thrust|スクワット|レッグ|ランジ|カーフ|デッド/i],
+  ["shoulder", /shoulder|overhead press|military|lateral raise|face pull|delt|ショルダー|レイズ|肩/i],
+  ["chest", /bench|chest|fly|push ?up|dip|ベンチ|チェスト|フライ|腕立て|ディップス/i],
+  ["back", /row|pull ?up|chin ?up|pulldown|lat |back|懸垂|ロー|プルダウン|チンニング|背/i],
+  ["arms", /curl|tricep|bicep|skull|カール|トライセプス|アーム|腕/i],
+];
+
+/** Best-effort category for a name: the library first, then keywords. */
 export function guessCategory(name: string): CategoryId {
   for (const [cat, list] of Object.entries(LIBRARY)) {
     if (list.some((t) => t.name === name)) return cat as CategoryId;
   }
-  return "other";
+  return KEYWORDS.find(([, re]) => re.test(name))?.[0] ?? "other";
 }
 
 const LB_PER_KG = 2.2046226218;

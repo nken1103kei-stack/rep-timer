@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { AppData, Exercise, LogEntry, Preset } from "./types";
+import type { AppData, Exercise, LogEntry, Preset, RestTimes } from "./types";
 import { guessCategory, isCategoryId, type CategoryId, type Unit } from "./catalog";
 
 export const uid = () => crypto.randomUUID().slice(0, 12);
+
+export const DEFAULT_REST: RestTimes = { W: 60, N: 120, D: 15 };
 
 // Menus start empty: everything in the list is something the user added with "+".
 const seed = (): AppData => ({
@@ -18,6 +20,7 @@ const seed = (): AppData => ({
   ],
   customLibrary: [],
   unit: "kg",
+  restTimes: DEFAULT_REST,
 });
 
 /** Brings data from older app versions (local or synced) up to the current shape. */
@@ -33,6 +36,7 @@ export function normalizeData(raw: Partial<AppData> & Record<string, unknown>): 
     presets: raw.presets?.length ? raw.presets : seed().presets,
     customLibrary: raw.customLibrary ?? [],
     unit: raw.unit === "lb" ? "lb" : "kg",
+    restTimes: { ...DEFAULT_REST, ...raw.restTimes },
   };
 }
 
@@ -58,6 +62,9 @@ type State = AppData & {
   removeCustomTemplate: (id: string) => void;
   setUnit: (unit: Unit) => void;
   replaceData: (data: AppData, updatedAt: number) => void;
+  /** Adds imported menus and records; records stay newest first. */
+  importRecords: (exercises: Exercise[], logs: LogEntry[]) => void;
+  setRestTimes: (restTimes: RestTimes) => void;
 };
 
 const touched = () => ({ updatedAt: Date.now() });
@@ -148,6 +155,13 @@ export const useStore = create<State>()(
         removeCustomTemplate: (id) =>
           set((s) => ({ customLibrary: s.customLibrary.filter((t) => t.id !== id), ...touched() })),
         setUnit: (unit) => set({ unit, ...touched() }),
+        setRestTimes: (restTimes) => set({ restTimes, ...touched() }),
+        importRecords: (exercises, logs) =>
+          set((s) => ({
+            exercises: [...s.exercises, ...exercises],
+            logs: [...s.logs, ...logs].sort((a, b) => b.at - a.at),
+            ...touched(),
+          })),
         replaceData: (data, updatedAt) =>
           set((s) => {
             const next = normalizeData(data);
@@ -179,6 +193,7 @@ export const pickData = (s: AppData): AppData => ({
   presets: s.presets,
   customLibrary: s.customLibrary,
   unit: s.unit,
+  restTimes: s.restTimes,
 });
 
 export const lastLogFor = (logs: LogEntry[], exerciseId: string) => logs.find((l) => l.exerciseId === exerciseId);
