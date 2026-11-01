@@ -1,5 +1,5 @@
 // Network-first for navigations and API, cache-first for hashed build assets.
-const CACHE = "reps-v1";
+const CACHE = "reps-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg"];
 
 self.addEventListener("install", (e) => {
@@ -12,6 +12,17 @@ self.addEventListener("activate", (e) => {
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))),
   );
   self.clients.claim();
+});
+
+// Tapping the timer notification brings the app back.
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const client = list.find((c) => "focus" in c);
+      return client ? client.focus() : self.clients.openWindow("/");
+    }),
+  );
 });
 
 self.addEventListener("fetch", (e) => {

@@ -155,12 +155,12 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
           <motion.div
             key="cardio"
             initial={{ height: 0, opacity: 0, marginTop: 0 }}
-            animate={{ height: 44, opacity: 1, marginTop: 16 }}
+            animate={{ height: "auto", opacity: 1, marginTop: 16 }}
             exit={{ height: 0, opacity: 0, marginTop: 0 }}
             transition={spring}
             className="overflow-hidden"
           >
-            <div className="flex h-11 items-center gap-2 rounded-2xl bg-white/55 px-3" data-testid="selected-menu">
+            <div className="flex min-h-11 items-center gap-2 rounded-2xl bg-white/55 px-3 py-2" data-testid="selected-menu">
               <Activity size={16} className="shrink-0" style={{ color: category("cardio").color }} />
               <AnimatePresence mode="wait" initial={false}>
                 <motion.span
@@ -168,10 +168,10 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
                   initial={{ opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -8 }}
-                  className="min-w-0 flex-1 truncate text-sm font-semibold"
+                  className="min-w-0 flex-1 text-sm leading-snug font-semibold break-words"
                 >
                   {cardio.name}
-                  <span className="ml-2 text-mute">{formatSet(cardio, "kg")}</span>
+                  <span className="ml-2 whitespace-nowrap text-mute">{formatSet(cardio, "kg")}</span>
                 </motion.span>
               </AnimatePresence>
               <button type="button" aria-label="選択解除" onClick={() => selectExercise(null)} className="text-mute">

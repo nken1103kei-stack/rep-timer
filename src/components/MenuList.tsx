@@ -14,6 +14,7 @@ import {
   NotebookPen,
   Plus,
   Share2,
+  StickyNote,
   Trash2,
 } from "lucide-react";
 import { lastLogFor, useStore } from "../lib/store";
@@ -253,31 +254,39 @@ function MenuRow({
           }
         }}
         whileTap={{ scale: 0.98 }}
-        className={`glass sheen flex h-[76px] items-center gap-3 rounded-[22px] pr-1 pl-4 transition-[outline-color] ${
+        className={`glass sheen flex min-h-[76px] items-center gap-3 rounded-[22px] py-2.5 pr-1 pl-4 transition-[outline-color] ${
           selected
             ? "outline-2 outline-accent"
             : "outline-2 outline-transparent"
         }`}
       >
         <motion.span
-          className="w-1.5 rounded-full"
+          className="w-1.5 shrink-0 self-stretch rounded-full"
           style={{ background: color }}
-          animate={{ height: selected ? 44 : 32 }}
+          animate={{ opacity: selected ? 1 : 0.7, scaleY: selected ? 1 : 0.75 }}
           transition={spring}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[15px] font-bold">{ex.name}</span>
-            <CategoryBadge id={ex.category} size="xs" />
+          {/* The full name, wrapping instead of being cut off. */}
+          <div className="text-[15px] leading-snug font-bold break-words" data-testid="menu-name">
+            {ex.name}
+            <CategoryBadge id={ex.category} size="xs" className="ml-1.5 align-[2px]" />
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-xs font-medium text-mute">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs font-medium text-mute">
             <span className="font-display text-sm font-semibold text-ink/80">
               {formatSet(ex, unit)}
             </span>
             {last && <span>· {formatDate(last.at)}</span>}
           </div>
+          {ex.memo && (
+            <div className="mt-1 flex items-start gap-1 text-xs leading-snug font-semibold text-ink/70" data-testid="menu-memo">
+              <StickyNote size={12} className="mt-px shrink-0 text-mute" />
+              <span className="break-words">{ex.memo}</span>
+            </div>
+          )}
         </div>
-        <span className="flex items-center gap-1 rounded-full bg-ink/5 px-2.5 py-1.5 text-xs font-bold text-ink/70">
+        {/* Compact so the full menu name gets the width. */}
+        <span className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-ink/5 px-1.5 py-1 text-[10px] leading-none font-bold text-ink/70">
           <NotebookPen size={14} /> 入力
         </span>
         <AnimatePresence>

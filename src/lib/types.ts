@@ -21,6 +21,8 @@ export type Exercise = {
   rest?: number;
   /** Planned weight and reps for each set; `weight`/`reps` mirror the first set. */
   detail?: SetEntry[];
+  /** A one-line note shown on the menu card, e.g. "シート高さ4・肩甲骨を寄せる". */
+  memo?: string;
 };
 
 export type LogEntry = {

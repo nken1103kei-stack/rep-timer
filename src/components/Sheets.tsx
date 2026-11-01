@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
-import { Check, Crown, Download, Lock, LogOut, Pencil, Trash2, Upload } from "lucide-react";
+import { Check, Crown, Download, Lock, LogOut, Pencil, StickyNote, Trash2, Upload } from "lucide-react";
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
 import { exportCsv, importCsv } from "../lib/csv";
 import { CATEGORIES, DEFAULT_TEMPLATE, type CategoryId } from "../lib/catalog";
@@ -10,9 +10,9 @@ import { signInWithGoogle, signOut, usePro, useSession } from "../lib/sync";
 import { buildSegments, formatDuration, formatTempo, totalMs, tutOf, type Tempo, type TimerKind } from "../lib/timer";
 import type { Exercise, LogEntry, Preset } from "../lib/types";
 import { haptic } from "../lib/feedback";
-import { CardioFields, CategoryBadge, NumberInput, PrimaryButton, SetFields, SetRows, Sheet, spring, Stepper } from "./ui";
+import { CardioFields, CategoryBadge, NumberInput, PrimaryButton, revealField, SetFields, SetRows, Sheet, spring, Stepper } from "./ui";
 import { openProSheet, ProBadge, ProLock, useProGate } from "./Pro";
-import { RestBanner, type RestRun } from "./RestTimer";
+import { newRest, RestBanner, type RestRun } from "./RestTimer";
 import { E1rmChart } from "./Charts";
 import { e1rmSeries } from "../lib/analytics";
 
@@ -39,14 +39,25 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
   const save = () => {
     const name = form.name.trim();
     if (!name) return;
-    if (existing) updateExercise(existing.id, { ...form, name });
-    else addExercise({ ...form, name });
+    const memo = form.memo?.trim() || undefined;
+    if (existing) updateExercise(existing.id, { ...form, name, memo });
+    else addExercise({ ...form, name, memo });
     onClose();
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title={existing ? "メニューを編集" : "メニューを追加"} testId="menu-editor">
-      <div className="space-y-3 pt-1">
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={existing ? "メニューを編集" : "メニューを追加"}
+      testId="menu-editor"
+      footer={
+        <PrimaryButton onClick={save} disabled={!form.name.trim()} testId="menu-save">
+          {existing ? "保存" : "メニューに追加"}
+        </PrimaryButton>
+      }
+    >
+      <div className="space-y-3 pt-1 pb-2">
         <input
           autoFocus={!existing}
           className={inputClass}
@@ -92,11 +103,7 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
             onChange={(sets) => setForm({ ...form, weight: sets[0].weight, reps: sets[0].reps, sets: sets.length, detail: sets })}
           />
         )}
-        <div className="pt-2 pb-2">
-          <PrimaryButton onClick={save} disabled={!form.name.trim()} testId="menu-save">
-            {existing ? "保存" : "追加"}
-          </PrimaryButton>
-        </div>
+        <MemoField value={form.memo ?? ""} onChange={(memo) => setForm({ ...form, memo })} />
       </div>
     </Sheet>
   );
@@ -107,6 +114,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
   const logs = useStore((s) => s.logs);
   const unit = useStore((s) => s.unit);
   const addLog = useStore((s) => s.addLog);
+  const updateExercise = useStore((s) => s.updateExercise);
   const [form, setForm] = useState<RecordForm>({ sets: [], cardio: { reps: 0, rest: 0, sets: 1 } });
   const [saved, setSaved] = useState(false);
   const [rest, setRest] = useState<RestRun | null>(null);
@@ -158,7 +166,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
                 key={rest.id}
                 run={rest}
                 unit={unit}
-                onAdjust={(d) => setRest({ ...rest, endAt: Math.max(Date.now(), rest.endAt + d * 1000), total: Math.max(1, rest.total + d) })}
+                onChange={setRest}
                 onDone={() => setRest(null)}
               />
             )}
@@ -176,6 +184,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
               <Stat label="総ボリューム" value={volume ? formatVolume(volume, unit) : "–"} />
             )}
           </div>
+          <MemoField value={exercise.memo ?? ""} onChange={(memo) => updateExercise(exercise.id, { memo: memo || undefined })} />
           {!cardio && (
             <ProLock label="推定1RMグラフは Pro で使えます" testId="e1rm-lock">
               <E1rmChart points={e1rmSeries(logs, exercise.id, exercise.category)} unit={unit} />
@@ -190,15 +199,9 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
               resting={rest?.next ? rest.next.index - 1 : rest ? form.sets.length - 1 : null}
               onRest={(i) =>
                 gate(() => {
+                  // Opens ready, not running: the time can be set before tapping スタート.
                   const type = form.sets[i].type ?? "N";
-                  const total = restTimes[type];
-                  setRest({
-                    id: Date.now(),
-                    type,
-                    total,
-                    endAt: Date.now() + total * 1000,
-                    next: form.sets[i + 1] ? { index: i + 1, set: form.sets[i + 1] } : null,
-                  });
+                  setRest(newRest(type, restTimes[type], form.sets[i + 1] ? { index: i + 1, set: form.sets[i + 1] } : null));
                 })()
               }
             />
@@ -249,6 +252,28 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
         </div>
       )}
     </Sheet>
+  );
+}
+
+export const MEMO_MAX = 60;
+
+/** One-line note per menu (form cues, machine settings). It shows on the menu card. */
+function MemoField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="glass flex items-center gap-2 rounded-2xl px-3" data-testid="memo-field">
+      <StickyNote size={16} className="shrink-0 text-mute" />
+      <input
+        value={value}
+        maxLength={MEMO_MAX}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={(e) => revealField(e.currentTarget)}
+        placeholder="一言メモ（フォームのコツなど）"
+        aria-label="一言メモ"
+        data-testid="memo-input"
+        className="h-12 min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none placeholder:text-slate-400"
+      />
+      {value && <span className="shrink-0 font-display text-[11px] font-bold text-mute">{value.length}/{MEMO_MAX}</span>}
+    </label>
   );
 }
 

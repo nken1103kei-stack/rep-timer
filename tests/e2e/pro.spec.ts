@@ -129,23 +129,44 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   await expect(log.getByTestId("set-type").first()).toHaveAttribute("data-type", "W");
   await log.getByTestId("set-rest").first().click();
   const banner = page.getByTestId("rest-banner");
+  const clock = page.getByTestId("rest-clock");
   await expect(banner).toBeVisible();
-  expect(Number(await page.getByTestId("rest-clock").getAttribute("data-sec"))).toBeLessThanOrEqual(60);
+  // The timer button only opens the rest: nothing counts down until スタート.
+  await expect(banner).toHaveAttribute("data-state", "ready");
+  await expect(clock).toHaveAttribute("data-sec", "60");
+  await page.waitForTimeout(1300);
+  await expect(clock).toHaveAttribute("data-sec", "60");
+  // Set the time first: a preset, then fine-tune.
+  await banner.locator('[data-testid="rest-preset"][data-sec="90"]').click();
+  await expect(clock).toHaveAttribute("data-sec", "90");
+  await page.getByTestId("rest-plus").click();
+  await expect(clock).toHaveAttribute("data-sec", "105");
   await expect(page.getByTestId("rest-next")).toHaveText("60kg × 10");
   await expect(page.getByTestId("rest-plates")).toContainText("片側 20kg");
+  await page.getByTestId("rest-start").click();
+  await expect(banner).toHaveAttribute("data-state", "running");
+  await expect.poll(async () => Number(await clock.getAttribute("data-sec"))).toBeLessThan(105);
+  // Pause holds the time; resume carries on.
+  await page.getByTestId("rest-toggle").click();
+  await expect(banner).toHaveAttribute("data-state", "paused");
+  const held = await clock.getAttribute("data-sec");
+  await page.waitForTimeout(1300);
+  await expect(clock).toHaveAttribute("data-sec", held!);
+  await page.getByTestId("rest-toggle").click();
+  await expect(banner).toHaveAttribute("data-state", "running");
   // The form stays usable during the rest.
   await log.getByRole("textbox", { name: "2セット目の重量" }).fill("70");
   await expect(log.getByRole("textbox", { name: "2セット目の重量" })).toHaveValue("70");
-  await page.getByTestId("rest-skip").click();
+  await page.getByTestId("rest-stop").click();
   await expect(banner).toBeHidden();
   // A drop set uses its own (short) rest.
   await log.getByTestId("set-type").nth(2).click();
   await log.getByTestId("set-type").nth(2).click();
   await expect(log.getByTestId("set-type").nth(2)).toHaveAttribute("data-type", "D");
   await log.getByTestId("set-rest").nth(2).click();
-  expect(Number(await page.getByTestId("rest-clock").getAttribute("data-sec"))).toBeLessThanOrEqual(15);
+  expect(Number(await clock.getAttribute("data-sec"))).toBeLessThanOrEqual(15);
   await expect(banner).toContainText("最後のセット");
-  await page.getByTestId("rest-skip").click();
+  await page.getByTestId("rest-stop").click();
   await log.getByTestId("log-save").click();
   await expect(log.getByTestId("log-row")).toContainText("60kg×10 / 70kg×10 / 60kg×10");
   await closeSheet(page);
@@ -220,7 +241,9 @@ test("the creator's account gets Pro for free, and Pro spots are marked with a c
   await openMenu(page, "ベンチプレス");
   expect(await page.getByTestId("log-sheet").getByTestId("pro-dot").count()).toBeGreaterThanOrEqual(2);
   await closeSheet(page);
+  await expect(page.getByTestId("pro-button")).toContainText("未加入");
   await page.getByTestId("pro-button").click();
+  await expect(page.getByTestId("plan-status")).toHaveAttribute("data-pro", "false");
   await expect(page.getByTestId("pro-where")).toHaveCount(6);
   await expect(page.getByTestId("pro-where").nth(1)).toContainText("記録画面");
   await closeSheet(page);
@@ -230,10 +253,13 @@ test("the creator's account gets Pro for free, and Pro spots are marked with a c
   test.skip(login.status() === 404, "test sign-in is only available locally");
   await page.reload();
   await expect(page.getByTestId("pro-button")).toHaveAttribute("data-pro", "true");
+  // Joined is spelled out, not only shown by colour.
+  await expect(page.getByTestId("pro-joined")).toHaveText("加入済み");
   await expect(page.getByTestId("ad-slot")).toHaveCount(0);
   await page.getByTestId("pro-button").click();
   await expect(page.getByTestId("pro-active")).toHaveAttribute("data-owner", "true");
-  await expect(page.getByTestId("pro-active")).toContainText("製作者アカウント");
+  await expect(page.getByTestId("plan-status")).toContainText("Pro 加入済み");
+  await expect(page.getByTestId("plan-status")).toContainText("製作者アカウント");
   await expect(page.getByTestId("pro-manage")).toHaveCount(0);
   await closeSheet(page);
   await seedMenus(page);

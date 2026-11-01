@@ -726,3 +726,59 @@ test("API guards: session required, bad credentials rejected", async ({ request 
   expect([401, 503]).toContain(login.status());
   expect((await request.get("/api/nope")).status()).toBe(404);
 });
+
+test("adding menus: the add button sits on its own band, never over the list", async ({ page }) => {
+  await page.getByTestId("menu-add").click();
+  const sheet = page.getByTestId("library-sheet");
+  await sheet.locator("[data-testid=lib-tab][data-cat=back]").click();
+  await sheet.getByTestId("lib-item").first().click();
+  const footer = sheet.getByTestId("sheet-footer");
+  await expect(footer.getByTestId("lib-submit")).toHaveText("1件をメニューに追加");
+  // Scrolled to the very bottom, the last row and the custom-name field still end above the button.
+  await sheet.getByTestId("lib-custom-input").scrollIntoViewIfNeeded();
+  const input = (await sheet.getByTestId("lib-custom-input").boundingBox())!;
+  const band = (await footer.boundingBox())!;
+  expect(input.y + input.height).toBeLessThanOrEqual(band.y + 1);
+});
+
+test("menu cards show the full name and a one-line memo", async ({ page }) => {
+  await seedMenus(page);
+  const long = "インクラインダンベルベンチプレス（ニュートラルグリップ・低角度）";
+  await page.getByTestId("menu-add").click();
+  await page.getByTestId("lib-custom-input").fill(long);
+  await page.getByTestId("lib-custom-add").click();
+  await page.getByTestId("lib-submit").click();
+  const name = page.locator(`[data-testid=menu-item][data-name="${long}"] [data-testid=menu-name]`);
+  await expect(name).toContainText(long);
+  // Not cut off: the text wraps instead of overflowing with an ellipsis.
+  expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && getComputedStyle(el).textOverflow !== "ellipsis")).toBe(true);
+
+  // Memo from the record sheet shows on the card and in the editor.
+  await openMenu(page, "スクワット");
+  await page.getByTestId("log-sheet").getByTestId("memo-input").fill("膝はつま先と同じ向き");
+  await closeSheet(page);
+  await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveText("膝はつま先と同じ向き");
+  await openMenu(page, "スクワット");
+  await page.getByTestId("log-edit").click();
+  const editor = page.getByTestId("menu-editor");
+  await expect(editor.getByTestId("memo-input")).toHaveValue("膝はつま先と同じ向き");
+  await editor.getByTestId("memo-input").fill("");
+  await editor.getByTestId("sheet-footer").getByTestId("menu-save").click();
+  await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveCount(0);
+  await page.reload();
+  await expect(card(page, "スクワット")).toBeVisible();
+});
+
+test("a running timer shows its time outside the app and can be stopped", async ({ page }) => {
+  await seedMenus(page);
+  await card(page, "ランニング").click();
+  await closeSheet(page);
+  await page.getByTestId("start-button").click();
+  await expect(page.getByTestId("timer-overlay")).toBeVisible();
+  // The tab title carries the phase and the time left, and the end clock is shown.
+  await expect.poll(() => page.title()).toMatch(/残り \d+:\d{2} · REPS$/);
+  await expect(page.getByTestId("timer-end")).toHaveText(/^\d{2}:\d{2} に終了$/);
+  await page.getByTestId("timer-stop").click();
+  await expect(page.getByTestId("timer-done")).toBeVisible();
+  await expect.poll(() => page.title()).toBe("REPS");
+});

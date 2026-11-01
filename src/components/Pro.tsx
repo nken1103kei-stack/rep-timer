@@ -91,6 +91,7 @@ export function ProSheet({ onLogin }: { onLogin: () => void }) {
   return (
     <Sheet open={open} onClose={close} testId="pro-sheet" title={<span className="flex items-center gap-2">REPS Pro <ProBadge /></span>}>
       <div className="space-y-3 pt-1 pb-2">
+        <PlanStatus />
         <ul className="space-y-2">
           {FEATURES.map((f, i) => (
             <motion.li
@@ -116,20 +117,10 @@ export function ProSheet({ onLogin }: { onLogin: () => void }) {
           画面では <Crown size={10} strokeWidth={3} className="inline text-accent" /> と <ProBadge /> の付いた所が Pro の機能です。記録・履歴・カスタム種目・CSV の読み書きは無料のまま使えます
         </p>
 
-        {plan.status === "owner" ? (
-          <div className="glass flex items-center justify-center gap-2 rounded-2xl p-3 text-sm font-bold" data-testid="pro-active" data-owner="true">
-            <BadgeCheck size={18} className="text-go" /> 製作者アカウント · Pro をすべて利用中
-          </div>
-        ) : plan.pro ? (
-          <>
-            <div className="glass flex items-center justify-center gap-2 rounded-2xl p-3 text-sm font-bold" data-testid="pro-active">
-              <BadgeCheck size={18} className="text-go" /> Pro を利用中
-              {plan.until && <span className="text-mute">· 次回更新 {new Date(plan.until).toLocaleDateString("ja-JP")}</span>}
-            </div>
-            <PrimaryButton tone="ghost" testId="pro-manage" disabled={busy} onClick={() => void go("portal")}>
-              プランの管理・解約
-            </PrimaryButton>
-          </>
+        {plan.status === "owner" ? null : plan.pro ? (
+          <PrimaryButton tone="ghost" testId="pro-manage" disabled={busy} onClick={() => void go("portal")}>
+            プランの管理・解約
+          </PrimaryButton>
         ) : !billing.enabled ? (
           <PrimaryButton testId="pro-subscribe" disabled onClick={() => undefined}>
             準備中
@@ -156,7 +147,44 @@ export function ProSheet({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-type AdsWindow = { adsbygoogle?: unknown[] };
+/** The current plan, spelled out at the top of the Pro sheet: 加入済み (with renewal date) or 未加入. */
+function PlanStatus() {
+  const plan = useSession((s) => s.plan);
+  if (!plan.pro) {
+    return (
+      <div className="glass flex items-center gap-3 rounded-2xl p-3" data-testid="plan-status" data-pro="false">
+        <span className="rounded-full bg-slate-900/8 px-2.5 py-1 text-xs font-extrabold text-mute">未加入</span>
+        <span className="text-sm font-bold">いまは無料プランです</span>
+      </div>
+    );
+  }
+  const owner = plan.status === "owner";
+  return (
+    <div
+      className="flex items-center gap-3 rounded-2xl bg-gradient-to-r from-[#ff4f00] to-[#ff9f0a] p-3.5 text-white shadow-[0_12px_28px_-12px_rgb(255_79_0/0.8)]"
+      data-testid="plan-status"
+      data-pro="true"
+    >
+      <span className="grid size-11 shrink-0 place-items-center rounded-full bg-white/25">
+        <BadgeCheck size={24} strokeWidth={2.4} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-lg leading-tight font-extrabold" data-testid="pro-active" data-owner={owner || undefined}>
+          Pro 加入済み
+        </span>
+        <span className="block text-xs font-semibold text-white/90">
+          {owner
+            ? "製作者アカウント · Pro をすべて利用中"
+            : plan.until
+              ? `すべての Pro 機能を利用中 · 次回更新 ${new Date(plan.until).toLocaleDateString("ja-JP")}`
+              : "すべての Pro 機能を利用中"}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+type AdsWindow ={ adsbygoogle?: unknown[] };
 let adsScript: Promise<void> | null = null;
 function loadAds(client: string) {
   adsScript ??= new Promise((resolve, reject) => {

@@ -1,12 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, Pause, Play, SkipForward, X } from "lucide-react";
+import { Bell, BellRing, Check, Pause, Play, SkipForward, Square, X } from "lucide-react";
 import { useStore } from "../lib/store";
 import { buildSegments, describeTimer, formatClock, formatDuration, isTempoPhase, segmentStart, timerAt, tutOf, type Phase } from "../lib/timer";
 import type { Exercise, Preset } from "../lib/types";
 import { beep, haptic, keepAwake } from "../lib/feedback";
 import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
 import { initialRecord, toLog } from "../lib/record";
+import { endClock, useBackgroundStatus, useNotificationPermission } from "../lib/background";
+
+/** Plain Japanese names for the tab title and the background notification. */
+const PHASE_JA: Record<Phase, string> = {
+  prepare: "準備",
+  work: "運動",
+  transition: "移動",
+  rest: "休憩",
+  ecc: "下ろす",
+  bottom: "止める",
+  con: "挙げる",
+  top: "締める",
+  done: "終了",
+};
 
 const PHASE: Record<Phase, { label: string; sub?: string; color: string; tint: string }> = {
   prepare: { label: "READY", color: "#FFB800", tint: "rgb(255 184 0 / 0.28)" },
@@ -90,6 +104,27 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
     if (st.phase === "done") void keepAwake(false);
   }, [st.phase]);
 
+  // Outside the app (another tab, the lock screen) the time left and the end clock stay visible.
+  const pausedRef = useRef(pausedAt);
+  pausedRef.current = pausedAt;
+  const { permission, request } = useNotificationPermission();
+  useBackgroundStatus(
+    st.phase === "done"
+      ? null
+      : (t) => {
+          const paused = pausedRef.current;
+          const at = timerAt(segments, (paused ?? t) - startRef.current - pausedTotal.current);
+          const round = at.rounds > 1 ? ` ${at.round}/${at.rounds}` : "";
+          const name = exercise?.name ?? preset.name;
+          if (paused !== null) return { title: `一時停止中 ${formatClock(at.remainingMs)}`, body: `${name}${round} · タップで戻る` };
+          const end = t + at.totalMs - at.elapsedMs;
+          return {
+            title: `${PHASE_JA[at.phase]}${round} 残り ${formatClock(at.remainingMs)}`,
+            body: `${name} · ${PHASE_JA[at.phase]}は ${endClock(t + at.remainingMs)} まで · 全体 ${endClock(end)} に終了`,
+          };
+        },
+  );
+
   const togglePause = () => {
     haptic(12);
     if (pausedAt === null) setPausedAt(Date.now());
@@ -135,16 +170,32 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
               {exercise?.category === "cardio" ? `${preset.work / 60}分 / 休憩${preset.rest / 60}分 × ${preset.rounds}` : describeTimer(preset)}
             </div>
           </div>
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.85 }}
-            onClick={onClose}
-            aria-label="閉じる"
-            data-testid="timer-close"
-            className="glass grid size-11 place-items-center rounded-full"
-          >
-            <X size={20} />
-          </motion.button>
+          <div className="flex shrink-0 gap-2">
+            {permission !== "unsupported" && permission !== "denied" && st.phase !== "done" && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.85 }}
+                onClick={() => void request()}
+                aria-label={permission === "granted" ? "バックグラウンド通知はオン" : "バックグラウンドでも残り時間を通知する"}
+                data-testid="timer-notify"
+                data-on={permission === "granted"}
+                className={`flex h-11 items-center gap-1 rounded-full px-3 text-xs font-bold ${permission === "granted" ? "bg-go/15 text-go" : "glass"}`}
+              >
+                {permission === "granted" ? <BellRing size={16} /> : <Bell size={16} />}
+                {permission === "granted" ? "通知オン" : "裏でも通知"}
+              </motion.button>
+            )}
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.85 }}
+              onClick={onClose}
+              aria-label="閉じる"
+              data-testid="timer-close"
+              className="glass grid size-11 place-items-center rounded-full"
+            >
+              <X size={20} />
+            </motion.button>
+          </div>
         </div>
 
         <AnimatePresence mode="wait">
@@ -209,6 +260,9 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
                       {st.round} / {st.rounds}
                     </div>
                   )}
+                  <div className="mt-1 text-xs font-bold text-mute" data-testid="timer-end">
+                    {pausedAt === null ? `${endClock(now + st.totalMs - st.elapsedMs)} に終了` : "一時停止中"}
+                  </div>
                 </div>
               </div>
 
@@ -227,7 +281,25 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
               </div>
 
               <div className="mt-auto flex items-center justify-center gap-6">
-                <div className="size-14" />
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.85 }}
+                  onClick={() => {
+                    haptic(20);
+                    // Stop: jump to the end so the record form opens with what was done.
+                    if (pausedAt !== null) {
+                      pausedTotal.current += Date.now() - pausedAt;
+                      setPausedAt(null);
+                    }
+                    startRef.current = Date.now() - pausedTotal.current - st.totalMs;
+                    setNow(Date.now());
+                  }}
+                  aria-label="タイマーを停止"
+                  data-testid="timer-stop"
+                  className="glass grid size-14 place-items-center rounded-full"
+                >
+                  <Square size={20} fill="currentColor" />
+                </motion.button>
                 <motion.button
                   type="button"
                   whileTap={{ scale: 0.88 }}

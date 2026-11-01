@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { CalendarDays, User as UserIcon } from "lucide-react";
 import { usePro, useSession } from "../lib/sync";
-import { Crown } from "lucide-react";
+import { Check, Crown } from "lucide-react";
 
 const dot = { off: "", syncing: "bg-ready animate-pulse", synced: "bg-go", error: "bg-danger" } as const;
 
@@ -19,7 +19,7 @@ export function Header({ onAccount, onCalendar, onPro }: { onAccount: () => void
           type="button"
           whileTap={{ scale: 0.9 }}
           onClick={onPro}
-          aria-label="REPS Pro"
+          aria-label={pro ? "REPS Pro 加入済み" : "REPS Pro に加入する"}
           data-testid="pro-button"
           data-pro={pro}
           className={`flex h-10 items-center gap-1 rounded-full px-3 text-xs font-extrabold tracking-wider ${
@@ -28,6 +28,15 @@ export function Header({ onAccount, onCalendar, onPro }: { onAccount: () => void
         >
           <Crown size={14} strokeWidth={2.6} />
           PRO
+          {/* Spelled out so the plan is clear at a glance, not only by colour. */}
+          {pro ? (
+            <span className="ml-0.5 flex items-center gap-0.5 rounded-full bg-white/25 py-0.5 pr-1.5 pl-1 text-[10px] tracking-normal" data-testid="pro-joined">
+              <Check size={11} strokeWidth={3.5} />
+              加入済み
+            </span>
+          ) : (
+            <span className="ml-0.5 text-[10px] tracking-normal text-mute">未加入</span>
+          )}
         </motion.button>
         <motion.button
           type="button"

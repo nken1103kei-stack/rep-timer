@@ -46,6 +46,7 @@ export function Sheet({
   children,
   testId,
   above = false,
+  footer,
 }: {
   open: boolean;
   onClose: () => void;
@@ -54,6 +55,8 @@ export function Sheet({
   testId?: string;
   /** Stack over full-screen views such as the calendar. */
   above?: boolean;
+  /** Pinned below the scrolling content on its own band, so nothing scrolls underneath it. */
+  footer?: ReactNode;
 }) {
   const controls = useDragControls();
   const keyboard = useKeyboardInset();
@@ -98,7 +101,12 @@ export function Sheet({
               <div className="h-1.5 w-10 rounded-full bg-slate-900/15" />
               <div className="mt-3 w-full text-lg font-bold">{title}</div>
             </div>
-            <div className="no-scrollbar overflow-y-auto px-5 pb-2">{children}</div>
+            <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-2">{children}</div>
+            {footer && (
+              <div className="shrink-0 border-t border-slate-900/8 px-5 pt-3" data-testid="sheet-footer">
+                {footer}
+              </div>
+            )}
           </motion.div>
         </>
       )}
@@ -445,12 +453,12 @@ export function SetRows({
   );
 }
 
-export function CategoryBadge({ id, size = "sm" }: { id: CategoryId; size?: "sm" | "xs" }) {
+export function CategoryBadge({ id, size = "sm", className = "" }: { id: CategoryId; size?: "sm" | "xs"; className?: string }) {
   const c = category(id);
   return (
     <span
       data-testid="category-badge"
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full font-bold ${size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-1.5 text-[10px]"}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full font-bold whitespace-nowrap ${size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-1.5 text-[10px]"} ${className}`}
       style={{ background: `${c.color}22`, color: c.id === "abs" ? "#9a7a00" : c.color }}
     >
       <span className="size-1.5 rounded-full" style={{ background: c.color }} />

@@ -73,7 +73,17 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
   const countFor = (id: CategoryId) => [...picked.values()].filter((p) => p.category === id).length;
 
   return (
-    <Sheet open={open} onClose={onClose} title="種目を追加" testId="library-sheet">
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="種目を追加"
+      testId="library-sheet"
+      footer={
+        <PrimaryButton onClick={submit} disabled={picked.size === 0} testId="lib-submit">
+          {picked.size > 0 ? `${picked.size}件をメニューに追加` : "種目を選んでください"}
+        </PrimaryButton>
+      }
+    >
       <div className="no-scrollbar sticky top-0 z-10 -mx-5 flex gap-2 overflow-x-auto px-5 pt-1 pb-3" role="tablist" aria-label="部位">
         {CATEGORIES.map((c) => {
           const active = c.id === tab;
@@ -145,12 +155,12 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
                   data-name={item.name}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => toggle(item)}
-                  className="glass flex h-14 min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 text-left disabled:opacity-45"
+                  className="glass flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-2xl px-4 py-2 text-left disabled:opacity-45"
                   style={isPicked ? { outline: `2px solid ${cat.color}` } : undefined}
                 >
                   <span className="h-7 w-1.5 shrink-0 rounded-full" style={{ background: cat.color }} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-bold">{item.name}</span>
+                    <span className="block text-[15px] leading-snug font-bold break-words">{item.name}</span>
                     <span className="block font-display text-xs font-semibold text-mute">
                       {isAdded ? "追加済み" : formatSet(item, unit)}
                     </span>
@@ -215,12 +225,6 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
           </div>
         </motion.div>
       </AnimatePresence>
-
-      <div className="sticky bottom-0 -mx-5 bg-gradient-to-t from-white via-white/90 to-transparent px-5 pt-4 pb-1">
-        <PrimaryButton onClick={submit} disabled={picked.size === 0} testId="lib-submit">
-          {picked.size > 0 ? `${picked.size}件をメニューに追加` : "追加"}
-        </PrimaryButton>
-      </div>
     </Sheet>
   );
 }
