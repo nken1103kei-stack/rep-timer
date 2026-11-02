@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppData, Exercise, LogEntry, Preset, RestTimes } from "./types";
 import { guessCategory, isCategoryId, type CategoryId, type Unit } from "./catalog";
+import { dayKey } from "./stats";
 
 export const uid = () => crypto.randomUUID().slice(0, 12);
 
@@ -21,17 +22,32 @@ const seed = (): AppData => ({
   customLibrary: [],
   unit: "kg",
   restTimes: DEFAULT_REST,
+  archive: [],
 });
+
+const ARCHIVE_MAX = 300;
+/** The menu day turns over at 4:00, so a late session that runs past midnight keeps its list. */
+const DAY_STARTS_AT_HOUR = 4;
+export const menuDayOf = (ms: number) => dayKey(ms - DAY_STARTS_AT_HOUR * 3600_000);
+const sameMenu = (a: { category: CategoryId; name: string }, b: { category: CategoryId; name: string }) =>
+  a.category === b.category && a.name === b.name;
+
+function normalizeExercise(e: Exercise): Exercise {
+  const { id, name, weight, reps, sets, rest, detail, memo } = e;
+  const category: CategoryId = isCategoryId(e.category) ? e.category : guessCategory(name);
+  const extra = { ...(detail?.length ? { detail } : {}), ...(memo ? { memo } : {}) };
+  return category === "cardio"
+    ? { id, name, category, weight, reps, sets, rest: rest ?? 0, ...extra }
+    : { id, name, category, weight, reps, sets, ...extra };
+}
 
 /** Brings data from older app versions (local or synced) up to the current shape. */
 export function normalizeData(raw: Partial<AppData> & Record<string, unknown>): AppData {
-  const exercises = (raw.exercises ?? []).map((e) => {
-    const { id, name, weight, reps, sets, rest } = e as Exercise;
-    const category: CategoryId = isCategoryId((e as Exercise).category) ? (e as Exercise).category : guessCategory(name);
-    return category === "cardio" ? { id, name, category, weight, reps, sets, rest: rest ?? 0 } : { id, name, category, weight, reps, sets };
-  });
+  // Per-set plans and memos are kept: they arrive here on every sync, not only from old versions.
   return {
-    exercises,
+    exercises: (raw.exercises ?? []).map(normalizeExercise),
+    archive: (raw.archive ?? []).map(normalizeExercise),
+    ...(typeof raw.menuDay === "string" ? { menuDay: raw.menuDay } : {}),
     logs: raw.logs ?? [],
     presets: raw.presets?.length ? raw.presets : seed().presets,
     customLibrary: raw.customLibrary ?? [],
@@ -65,6 +81,8 @@ type State = AppData & {
   /** Adds imported menus and records; records stay newest first. */
   importRecords: (exercises: Exercise[], logs: LogEntry[]) => void;
   setRestTimes: (restTimes: RestTimes) => void;
+  /** On a new day (from 4:00), moves the menu list to the archive so the day starts with an empty list. Records stay. */
+  startDay: (today?: string) => void;
 };
 
 const touched = () => ({ updatedAt: Date.now() });
@@ -81,12 +99,27 @@ export const useStore = create<State>()(
         selectExercise: (id) => set({ selectedExerciseId: id }),
         selectPreset: (id) => set({ selectedPresetId: id }),
         addExercise: (ex) => {
-          const id = uid();
-          set((s) => ({ exercises: [...s.exercises, { ...ex, id }], ...touched() }));
+          // Typed in by hand: the new plan wins, but the archived menu's id (history) and memo carry over.
+          const old = (get().archive ?? []).find((a) => sameMenu(a, ex));
+          const id = old?.id ?? uid();
+          set((s) => ({
+            exercises: [...s.exercises, { ...ex, memo: ex.memo ?? old?.memo, id }],
+            archive: (s.archive ?? []).filter((a) => a !== old),
+            ...touched(),
+          }));
           return id;
         },
+        // A menu added again after a day change comes back from the archive with its plan, memo and history.
         addExercises: (list) =>
-          set((s) => ({ exercises: [...s.exercises, ...list.map((ex) => ({ ...ex, id: uid() }))], ...touched() })),
+          set((s) => {
+            const archive = s.archive ?? [];
+            const revived = list.map((ex) => archive.find((a) => sameMenu(a, ex)) ?? { ...ex, id: uid() });
+            return {
+              exercises: [...s.exercises, ...revived],
+              archive: archive.filter((a) => !revived.includes(a)),
+              ...touched(),
+            };
+          }),
         updateExercise: (id, patch) =>
           set((s) => ({ exercises: s.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)), ...touched() })),
         removeExercise: (id) => {
@@ -156,6 +189,20 @@ export const useStore = create<State>()(
           set((s) => ({ customLibrary: s.customLibrary.filter((t) => t.id !== id), ...touched() })),
         setUnit: (unit) => set({ unit, ...touched() }),
         setRestTimes: (restTimes) => set({ restTimes, ...touched() }),
+        startDay: (today = menuDayOf(Date.now())) =>
+          set((s) => {
+            if (s.menuDay === today) return s;
+            // First run on this version: adopt today without clearing anything.
+            if (!s.menuDay || s.exercises.length === 0) return { menuDay: today };
+            const kept = (s.archive ?? []).filter((a) => !s.exercises.some((e) => sameMenu(a, e)));
+            return {
+              menuDay: today,
+              exercises: [],
+              archive: [...s.exercises, ...kept].slice(0, ARCHIVE_MAX),
+              selectedExerciseId: null,
+              ...touched(),
+            };
+          }),
         importRecords: (exercises, logs) =>
           set((s) => ({
             exercises: [...s.exercises, ...exercises],
@@ -194,6 +241,8 @@ export const pickData = (s: AppData): AppData => ({
   customLibrary: s.customLibrary,
   unit: s.unit,
   restTimes: s.restTimes,
+  menuDay: s.menuDay,
+  archive: s.archive,
 });
 
 export const lastLogFor = (logs: LogEntry[], exerciseId: string) => logs.find((l) => l.exerciseId === exerciseId);

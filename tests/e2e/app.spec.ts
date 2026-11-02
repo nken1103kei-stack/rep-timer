@@ -782,3 +782,26 @@ test("a running timer shows its time outside the app and can be stopped", async 
   await expect(page.getByTestId("timer-done")).toBeVisible();
   await expect.poll(() => page.title()).toBe("REPS");
 });
+
+test("a new day starts with an empty menu list; records stay and re-added menus come back as they were", async ({ page }) => {
+  // Yesterday's list, with a memo and a record.
+  const yesterday = { id: "m1", name: "ベンチプレス", category: "chest", weight: 70, reps: 8, sets: 3, memo: "肩甲骨を寄せる" };
+  await page.evaluate((ex) => {
+    const log = { id: "l1", exerciseId: ex.id, at: Date.now() - 86400_000, weight: 70, reps: 8, sets: 3, name: ex.name, category: ex.category };
+    localStorage.setItem("rep-timer", JSON.stringify({ state: { exercises: [ex], logs: [log], menuDay: "2000-01-01" }, version: 2 }));
+  }, yesterday);
+  await page.reload();
+  await expect(page.getByTestId("timer-panel")).toBeVisible();
+  await expect(page.getByTestId("menu-item")).toHaveCount(0);
+  await expect(page.getByText("今日のメニューを追加")).toBeVisible();
+
+  // The library shows the last plan and adding it restores memo and history.
+  await page.getByTestId("menu-add").click();
+  const item = page.locator('[data-testid=lib-item][data-name="ベンチプレス"]');
+  await expect(item).toContainText("前回 70kg × 8 × 3");
+  await item.click();
+  await page.getByTestId("lib-submit").click();
+  await expect(page.locator('[data-testid=menu-item][data-name="ベンチプレス"] [data-testid=menu-memo]')).toHaveText("肩甲骨を寄せる");
+  await openMenu(page, "ベンチプレス");
+  await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
+});

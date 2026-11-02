@@ -69,4 +69,8 @@ export type AppData = {
   customLibrary: CustomTemplate[];
   unit: Unit;
   restTimes?: RestTimes;
+  /** The day (YYYY-MM-DD) the menu list belongs to; on a new day the list starts empty. */
+  menuDay?: string;
+  /** Menus cleared at a day change, so adding one again brings back its plan, memo and history. */
+  archive?: Exercise[];
 };

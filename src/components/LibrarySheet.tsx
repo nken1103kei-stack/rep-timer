@@ -13,6 +13,7 @@ const keyOf = (i: { category: CategoryId; name: string }) => `${i.category}:${i.
 
 export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const exercises = useStore((s) => s.exercises);
+  const archive = useStore((s) => s.archive);
   const customLibrary = useStore((s) => s.customLibrary);
   const unit = useStore((s) => s.unit);
   const addExercises = useStore((s) => s.addExercises);
@@ -140,6 +141,8 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
           {items.map((item, idx) => {
             const isAdded = added.has(keyOf(item));
             const isPicked = picked.has(keyOf(item));
+            // Used on an earlier day: adding it brings back that plan, shown here as 前回.
+            const before = archive?.find((a) => keyOf(a) === keyOf(item));
             return (
               <motion.div
                 key={keyOf(item)}
@@ -162,7 +165,7 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15px] leading-snug font-bold break-words">{item.name}</span>
                     <span className="block font-display text-xs font-semibold text-mute">
-                      {isAdded ? "追加済み" : formatSet(item, unit)}
+                      {isAdded ? "追加済み" : before ? `前回 ${formatSet(before, unit)}` : formatSet(item, unit)}
                     </span>
                   </span>
                   <motion.span

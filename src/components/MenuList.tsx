@@ -147,7 +147,7 @@ export function MenuList({
           onClick={onAdd}
           className="mt-3 flex h-[76px] w-full items-center justify-center gap-2 rounded-[22px] border-2 border-dashed border-slate-900/15 text-sm font-bold text-mute"
         >
-          <Plus size={18} /> メニューを追加
+          <Plus size={18} /> 今日のメニューを追加
         </motion.button>
       )}
 

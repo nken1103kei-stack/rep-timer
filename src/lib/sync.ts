@@ -86,6 +86,8 @@ async function pull() {
     const local = useStore.getState();
     if (remote.data && remote.updatedAt > local.updatedAt) {
       useStore.getState().replaceData(remote.data, remote.updatedAt);
+      // Server data from an earlier day still gets today's empty menu list.
+      useStore.getState().startDay();
       useSession.setState({ status: "synced", syncedAt: Date.now() });
     } else if (local.updatedAt > remote.updatedAt) {
       await push();
@@ -111,7 +113,7 @@ async function push() {
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
   if (!useSession.getState().user) return;
-  const keys = ["exercises", "logs", "presets", "customLibrary", "unit", "restTimes"] as const;
+  const keys = ["exercises", "logs", "presets", "customLibrary", "unit", "restTimes", "menuDay", "archive"] as const;
   if (keys.every((k) => s[k] === prev[k])) return;
   clearTimeout(pushTimer);
   pushTimer = setTimeout(push, 1200);

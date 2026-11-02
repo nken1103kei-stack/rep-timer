@@ -52,6 +52,19 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
+  // The menu list is per day: check on open, on coming back to the app, and while it stays open past midnight.
+  useEffect(() => {
+    const check = () => useStore.getState().startDay();
+    check();
+    const onVisible = () => document.visibilityState === "visible" && check();
+    document.addEventListener("visibilitychange", onVisible);
+    const t = setInterval(check, 60_000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(t);
+    };
+  }, []);
+
   // Text to copy by hand when neither the share sheet nor the clipboard worked.
   const [manualShare, setManualShare] = useState<string | null>(null);
 
