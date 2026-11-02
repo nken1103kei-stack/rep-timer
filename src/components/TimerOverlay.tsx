@@ -7,7 +7,7 @@ import type { Exercise, Preset } from "../lib/types";
 import { beep, haptic, keepAwake } from "../lib/feedback";
 import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
 import { initialRecord, toLog } from "../lib/record";
-import { endClock, useBackgroundStatus, useNotificationPermission } from "../lib/background";
+import { endClock, minSec, useBackgroundStatus, useNotificationPermission } from "../lib/background";
 
 /** Plain Japanese names for the tab title and the background notification. */
 const PHASE_JA: Record<Phase, string> = {
@@ -116,10 +116,10 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
           const at = timerAt(segments, (paused ?? t) - startRef.current - pausedTotal.current);
           const round = at.rounds > 1 ? ` ${at.round}/${at.rounds}` : "";
           const name = exercise?.name ?? preset.name;
-          if (paused !== null) return { title: `一時停止中 ${formatClock(at.remainingMs)}`, body: `${name}${round} · タップで戻る` };
+          if (paused !== null) return { title: `一時停止中 ${minSec(at.remainingMs)}`, body: `${name}${round} · タップで戻る` };
           const end = t + at.totalMs - at.elapsedMs;
           return {
-            title: `${PHASE_JA[at.phase]}${round} 残り ${formatClock(at.remainingMs)}`,
+            title: `${PHASE_JA[at.phase]}${round} 残り ${minSec(at.remainingMs)}`,
             body: `${name} · ${PHASE_JA[at.phase]}は ${endClock(t + at.remainingMs)} まで · 全体 ${endClock(end)} に終了`,
           };
         },

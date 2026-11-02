@@ -55,3 +55,12 @@ describe("daily menu list", () => {
     expect(data.menuDay).toBe("2026-11-02");
   });
 });
+
+describe("background timer text", () => {
+  it("always shows minutes and seconds", async () => {
+    const { minSec } = await import("../../src/lib/background");
+    expect(minSec(4200)).toBe("0:05");
+    expect(minSec(65_000)).toBe("1:05");
+    expect(minSec(-10)).toBe("0:00");
+  });
+});

@@ -9,7 +9,7 @@ import type { Unit } from "../lib/catalog";
 import type { SetEntry, SetType } from "../lib/types";
 import { SET_TYPE } from "../lib/record";
 import { spring } from "./ui";
-import { endClock, useBackgroundStatus } from "../lib/background";
+import { endClock, minSec, useBackgroundStatus } from "../lib/background";
 
 /**
  * A rest countdown. It opens in "ready" so the time can be set first; `endAt` is set only while it runs,
@@ -60,7 +60,7 @@ export function RestBanner({ run, unit, onChange, onDone }: { run: RestRun; unit
   const endAt = run.endAt;
   useBackgroundStatus(
     endAt !== null && !finished
-      ? (t) => ({ title: `休憩 残り ${formatClock(Math.max(0, endAt - t))}`, body: `${endClock(endAt)} に休憩終了` })
+      ? (t) => ({ title: `休憩 残り ${minSec(endAt - t)}`, body: `${endClock(endAt)} に休憩終了` })
       : null,
   );
 

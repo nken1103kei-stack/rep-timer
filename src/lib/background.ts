@@ -8,6 +8,12 @@ const BASE_TITLE = "REPS";
 
 export const notificationsSupported = () => typeof window !== "undefined" && "Notification" in window;
 
+/** Time left as m:ss even under a minute ("0:05", not "5"), so a bare number never shows in a tab title. */
+export function minSec(ms: number) {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
 /** Clock time a countdown ends at, e.g. "10:45". Stays right even when the browser throttles a hidden page. */
 export const endClock = (endAt: number) => new Date(endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 
