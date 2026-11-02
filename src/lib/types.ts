@@ -73,4 +73,6 @@ export type AppData = {
   menuDay?: string;
   /** Menus cleared at a day change, so adding one again brings back its plan, memo and history. */
   archive?: Exercise[];
+  /** Ids of deleted records, so merging with another device's copy does not bring them back. */
+  deletedLogs?: string[];
 };

@@ -48,6 +48,7 @@ export function normalizeData(raw: Partial<AppData> & Record<string, unknown>): 
     exercises: (raw.exercises ?? []).map(normalizeExercise),
     archive: (raw.archive ?? []).map(normalizeExercise),
     ...(typeof raw.menuDay === "string" ? { menuDay: raw.menuDay } : {}),
+    deletedLogs: Array.isArray(raw.deletedLogs) ? raw.deletedLogs : [],
     logs: raw.logs ?? [],
     presets: raw.presets?.length ? raw.presets : seed().presets,
     customLibrary: raw.customLibrary ?? [],
@@ -141,7 +142,11 @@ export const useStore = create<State>()(
           }),
         purgeLogs: (exerciseId) => {
           if (get().exercises.some((e) => e.id === exerciseId)) return;
-          set((s) => ({ logs: s.logs.filter((l) => l.exerciseId !== exerciseId), ...touched() }));
+          set((s) => ({
+            logs: s.logs.filter((l) => l.exerciseId !== exerciseId),
+            deletedLogs: [...(s.deletedLogs ?? []), ...s.logs.filter((l) => l.exerciseId === exerciseId).map((l) => l.id)],
+            ...touched(),
+          }));
         },
         reorderExercises: (exercises) => set({ exercises, ...touched() }),
         addLog: (log) =>
@@ -158,7 +163,9 @@ export const useStore = create<State>()(
               ...touched(),
             };
           }),
-        removeLog: (id) => set((s) => ({ logs: s.logs.filter((l) => l.id !== id), ...touched() })),
+        // Remembered as deleted, so another device's copy cannot bring it back when the two are merged.
+        removeLog: (id) =>
+          set((s) => ({ logs: s.logs.filter((l) => l.id !== id), deletedLogs: [...(s.deletedLogs ?? []), id], ...touched() })),
         savePreset: ({ id, ...preset }) => {
           const presetId = id ?? uid();
           set((s) => ({
@@ -243,6 +250,7 @@ export const pickData = (s: AppData): AppData => ({
   restTimes: s.restTimes,
   menuDay: s.menuDay,
   archive: s.archive,
+  deletedLogs: s.deletedLogs,
 });
 
 export const lastLogFor = (logs: LogEntry[], exerciseId: string) => logs.find((l) => l.exerciseId === exerciseId);

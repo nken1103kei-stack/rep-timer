@@ -808,3 +808,31 @@ test("a new day starts with an empty menu list; records stay and re-added menus 
   await openMenu(page, "ベンチプレス");
   await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
 });
+
+test("sync merges records: a stale device's copy cannot wipe records made on another device", async ({ page }) => {
+  const login = await page.request.post("/api/dev/login", { data: { id: "e2e-sync", email: "sync@example.test" } });
+  test.skip(login.status() === 404, "test sign-in is only available locally");
+  const snap = (logs: { id: string; at: number }[], extra = {}) => ({
+    exercises: [],
+    presets: [],
+    customLibrary: [],
+    unit: "kg",
+    logs: logs.map((l) => ({ ...l, exerciseId: "m1", weight: 60, reps: 10, sets: 3, name: "ベンチプレス", category: "chest" })),
+    ...extra,
+  });
+  // The phone records on 11/1 …
+  await page.request.put("/api/data", { data: { data: snap([{ id: "nov1", at: 2 }, { id: "oct31", at: 1 }]), updatedAt: 100 } });
+  // … then a tab left open since 10/31 saves a change with a newer timestamp.
+  const res = await (await page.request.put("/api/data", { data: { data: snap([{ id: "oct31", at: 1 }], { unit: "lb" }), updatedAt: 200 } })).json();
+  expect(res.data.logs.map((l: { id: string }) => l.id)).toEqual(["nov1", "oct31"]);
+  expect(res.data.unit).toBe("lb");
+  // A deletion is remembered and wins over the copy that still has it.
+  const del = await (await page.request.put("/api/data", { data: { data: snap([{ id: "oct31", at: 1 }], { deletedLogs: ["nov1"] }), updatedAt: 300 } })).json();
+  expect(del.data.logs.map((l: { id: string }) => l.id)).toEqual(["oct31"]);
+
+  // The app adopts the merged copy: the 11/1 record shows up on this device.
+  await page.request.put("/api/data", { data: { data: snap([{ id: "back", at: Date.now() }]), updatedAt: 400 } });
+  await page.reload();
+  await page.getByTestId("calendar-button").click();
+  await expect(page.getByTestId("calendar")).toContainText("ベンチプレス");
+});

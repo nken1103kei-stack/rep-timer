@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { pickData, useStore } from "./store";
+import { normalizeData, pickData, useStore } from "./store";
 import type { AppData } from "./types";
 
 export type User = { id: string; email: string; name: string | null; picture: string | null };
@@ -79,45 +79,70 @@ export async function openBilling(kind: "checkout" | "portal") {
   window.location.assign(url);
 }
 
-async function pull() {
-  useSession.setState({ status: "syncing" });
-  try {
-    const remote = await api<{ data: AppData | null; updatedAt: number }>("/data");
-    const local = useStore.getState();
-    if (remote.data && remote.updatedAt > local.updatedAt) {
-      useStore.getState().replaceData(remote.data, remote.updatedAt);
-      // Server data from an earlier day still gets today's empty menu list.
-      useStore.getState().startDay();
+/**
+ * Sends this device's copy; the server merges it with its own (records from both are kept) and returns the result,
+ * which this device adopts. Used on start, on sign-in, after every change, and when the app comes back or goes online.
+ */
+let syncing: Promise<void> | null = null;
+let again = false;
+let adopting = false;
+
+async function sync(): Promise<void> {
+  if (syncing) {
+    again = true;
+    return syncing;
+  }
+  syncing = (async () => {
+    const sent = useStore.getState();
+    useSession.setState({ status: "syncing" });
+    try {
+      const res = await api<{ data?: AppData; updatedAt?: number }>("/data", {
+        method: "PUT",
+        body: JSON.stringify({ data: pickData(sent), updatedAt: sent.updatedAt }),
+      });
+      const now = useStore.getState();
+      // Changed again while the request was out: that change syncs next, carrying this merge with it.
+      if (res.data && typeof res.updatedAt === "number" && now.updatedAt === sent.updatedAt) {
+        if (JSON.stringify(pickData(normalizeData(res.data))) !== JSON.stringify(pickData(now))) {
+          adopting = true;
+          now.replaceData(res.data, res.updatedAt);
+          // Server data from an earlier day still gets today's empty menu list.
+          useStore.getState().startDay();
+          adopting = false;
+        }
+      }
       useSession.setState({ status: "synced", syncedAt: Date.now() });
-    } else if (local.updatedAt > remote.updatedAt) {
-      await push();
-    } else {
-      useSession.setState({ status: "synced", syncedAt: Date.now() });
+    } catch {
+      useSession.setState({ status: "error" });
     }
-  } catch {
-    useSession.setState({ status: "error" });
+  })();
+  await syncing;
+  syncing = null;
+  if (again) {
+    again = false;
+    await sync();
   }
 }
 
-async function push() {
-  const s = useStore.getState();
-  useSession.setState({ status: "syncing" });
-  try {
-    await api("/data", { method: "PUT", body: JSON.stringify({ data: pickData(s), updatedAt: s.updatedAt }) });
-    useSession.setState({ status: "synced", syncedAt: Date.now() });
-  } catch {
-    useSession.setState({ status: "error" });
-  }
-}
+const pull = sync;
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 useStore.subscribe((s, prev) => {
-  if (!useSession.getState().user) return;
-  const keys = ["exercises", "logs", "presets", "customLibrary", "unit", "restTimes", "menuDay", "archive"] as const;
+  if (!useSession.getState().user || adopting) return;
+  const keys = ["exercises", "logs", "presets", "customLibrary", "unit", "restTimes", "menuDay", "archive", "deletedLogs"] as const;
   if (keys.every((k) => s[k] === prev[k])) return;
   clearTimeout(pushTimer);
-  pushTimer = setTimeout(push, 1200);
+  pushTimer = setTimeout(() => void sync(), 1200);
 });
+
+// A tab left open, or a phone back from a gym without signal, catches up before anything else happens.
+if (typeof window !== "undefined") {
+  const catchUp = () => {
+    if (useSession.getState().user && document.visibilityState === "visible") void sync();
+  };
+  document.addEventListener("visibilitychange", catchUp);
+  window.addEventListener("online", catchUp);
+}
 
 export async function signInWithGoogle(credential: string) {
   const { user } = await api<{ user: User }>("/auth/google", {

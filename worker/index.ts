@@ -3,6 +3,8 @@ import { createMiddleware } from "hono/factory";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { SESSION_COOKIE, SESSION_TTL_SEC, signSession, verifySession } from "./session";
+import { mergeSnapshots } from "../src/lib/merge";
+import type { AppData } from "../src/lib/types";
 import { applyEvent, customerFor, isOwner, ownerList, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
 
 type Env = BillingEnv & {
@@ -237,14 +239,23 @@ app.put("/data", async (c) => {
   if (typeof body.data !== "object" || body.data === null || typeof body.updatedAt !== "number") {
     return c.json({ error: "invalid_body" }, 400);
   }
-  // Last write wins: an older client snapshot never overwrites newer server data.
-  const result = await c.env.DB.prepare(
-    `INSERT INTO user_data (user_id, data, updated_at) VALUES (?1, ?2, ?3)
-     ON CONFLICT(user_id) DO UPDATE SET data = ?2, updated_at = ?3 WHERE excluded.updated_at > user_data.updated_at`,
-  )
-    .bind(c.get("userId"), JSON.stringify(body.data), body.updatedAt)
-    .run();
-  return c.json({ ok: true, applied: result.meta.changes > 0 });
+  // Merge, never overwrite: records from both copies are kept (an older or stale device can no longer wipe them),
+  // and the newer copy decides menus and settings. The merged copy goes back so the device adopts it.
+  const row = await c.env.DB.prepare("SELECT data, updated_at FROM user_data WHERE user_id = ?1")
+    .bind(c.get("userId"))
+    .first<{ data: string; updated_at: number }>();
+  const incoming = { data: body.data as AppData, updatedAt: body.updatedAt };
+  const merged = row ? mergeSnapshots({ data: JSON.parse(row.data) as AppData, updatedAt: row.updated_at }, incoming) : incoming;
+  const json = JSON.stringify(merged.data);
+  if (!row || json !== row.data || merged.updatedAt !== row.updated_at) {
+    await c.env.DB.prepare(
+      `INSERT INTO user_data (user_id, data, updated_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT(user_id) DO UPDATE SET data = ?2, updated_at = ?3`,
+    )
+      .bind(c.get("userId"), json, merged.updatedAt)
+      .run();
+  }
+  return c.json({ ok: true, data: merged.data, updatedAt: merged.updatedAt });
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
