@@ -1,11 +1,13 @@
-export type QuoteCategory = "筋肉痛" | "食事" | "筋トレ" | "脚トレ" | "ジム";
+export type QuoteCategory = "筋肉痛" | "失敗" | "食事" | "筋トレ" | "脚トレ" | "ジム";
 export type Quote = { id: number; name: string; quote: string; category: QuoteCategory };
 
 /** Parody quotes from fictional "fitness legends" shown at the top of the home screen. */
 export const QUOTES: Quote[] = [
   { id: 1, name: "ソクラテス・スクワテス", quote: "無知の知。脚トレの翌日は、歩けぬことを知る。", category: "筋肉痛" },
+  { id: 2, name: "ジュリアス・シーザップ", quote: "来た、見た、挙げた。そして腰をやった。", category: "失敗" },
   { id: 3, name: "レオナルド・ダ・ベンチ", quote: "最後の晩餐？いや、最後のチートデイだ。", category: "食事" },
   { id: 4, name: "ガリレオ・ガリマッチョ", quote: "それでもバーベルは動く。", category: "筋トレ" },
+  { id: 5, name: "アイザック・ニュートレーニング", quote: "リンゴは木から落ちる。ダンベルは顔に落とすな。", category: "失敗" },
   { id: 6, name: "ルネ・デカルトレ", quote: "我、鍛える。ゆえに我、筋肉痛あり。", category: "筋肉痛" },
   { id: 7, name: "ウィリアム・シェイクスピアー", quote: "挙げるべきか、下ろすべきか。それが問題だ。", category: "筋トレ" },
   { id: 8, name: "チャールズ・ダー筋", quote: "生き残るのは最も強い者ではない。脚トレから逃げなかった者だ。", category: "脚トレ" },
@@ -27,6 +29,7 @@ export const QUOTES: Quote[] = [
 /** Accent per quote category, taken from the body-part palette. */
 export const QUOTE_COLORS: Record<QuoteCategory, string> = {
   筋肉痛: "#FF375F",
+  失敗: "#FF9F0A",
   食事: "#E0A100",
   筋トレ: "#FF4F00",
   脚トレ: "#30D158",

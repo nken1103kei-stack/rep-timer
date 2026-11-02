@@ -60,15 +60,8 @@ export function QuoteCard() {
           >
             「{quote.quote}」
           </span>
-          <span className="mt-1 flex items-center justify-center gap-2 text-xs font-bold text-ink/70">
-            <span data-testid="quote-name">— {quote.name} —</span>
-            <span
-              data-testid="quote-category"
-              className="rounded-full px-1.5 py-px text-[10px]"
-              style={{ color, backgroundColor: `${color}1f` }}
-            >
-              {quote.category}
-            </span>
+          <span className="mt-1 block text-xs font-bold text-ink/70" data-testid="quote-name">
+            — {quote.name} —
           </span>
         </motion.span>
       </AnimatePresence>

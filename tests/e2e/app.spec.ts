@@ -73,6 +73,9 @@ test("a random parody quote sits at the top; tapping shows another", async ({ pa
   await expect(quote).toContainText("※フィクション・名言パロディ");
   await expect(page.getByTestId("quote-text")).toHaveText(/^「.+」$/);
   await expect(page.getByTestId("quote-name")).toHaveText(/^— .+ —$/);
+  // No category label (失敗・脚トレ…) on the card.
+  await expect(quote.getByTestId("quote-category")).toHaveCount(0);
+  await expect(quote).not.toContainText("失敗");
 
   // Above the timer, right under the header.
   const q = (await quote.boundingBox())!;
