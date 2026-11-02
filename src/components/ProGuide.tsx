@@ -25,9 +25,9 @@ export const GUIDES: FeatureGuide[] = [
     id: "rest",
     icon: Timer,
     title: "セット別の休憩タイマー",
-    lead: "セットの種類（W・N・D）ごとに休憩時間が決まっていて、⏱ を押すだけでその時間がセットされます",
+    lead: "W・N・D のセットの種類ごとに休憩時間が決まっていて、⏱ を押すだけでその時間がセットされます",
     steps: [
-      "記録画面で「SET 1」などのラベルをタップして、W（ウォームアップ）・N（メイン）・D（ドロップ）を切り替える",
+      "記録画面で「SET 1」などのラベルをタップして、ウォームアップの W、メインの N、ドロップの D を切り替える",
       "セットが終わったら、その行の ⏱ ボタンを押す",
       "休憩時間がセットされるので「スタート」。休憩中も次のセットの重量とプレートが見える",
       "それぞれの休憩時間は 設定 →「セット別の休憩時間」で変えられる",
@@ -57,8 +57,8 @@ export const GUIDES: FeatureGuide[] = [
     lead: "1回の動作を「下ろす・止める・挙げる・締める」の秒数で区切り、音と振動でカウントします",
     steps: [
       "タイマーの「＋」→ 種類で「テンポ」を選ぶ",
-      "4つの秒数と回数を決める（例: 3-1-2-0 を 10回）",
-      "スタートすると1回ずつカウント。筋肉に負荷がかかった時間（TUT）も表示される",
+      "4つの秒数と回数を決める。例: 3-1-2-0 を 10回",
+      "スタートすると1回ずつカウント。筋肉に負荷がかかった時間 TUT も表示される",
     ],
     where: "タイマーの追加・編集 →「テンポ」",
     tip: "4つの秒数と回数を決めると、1回ずつ音と振動でカウントします",
@@ -119,7 +119,7 @@ function RestDiagram() {
           <span className="w-10 shrink-0 text-right text-[11px] font-extrabold">{DEFAULT_REST[t]}秒</span>
         </div>
       ))}
-      <p className="text-[10px] font-semibold text-mute">例: W {SET_TYPE.W.label} / N {SET_TYPE.N.label} / D {SET_TYPE.D.label}（初期設定の秒数）</p>
+      <p className="text-[10px] font-semibold text-mute">例: W {SET_TYPE.W.label} / N {SET_TYPE.N.label} / D {SET_TYPE.D.label}。秒数は初期設定</p>
     </div>
   );
 }
@@ -229,7 +229,7 @@ function E1rmDiagram() {
       <p className="mt-1 text-center text-[11px] font-bold">
         60kg × 10回 → 推定1RM <span className="text-accent">80kg</span>
       </p>
-      <p className="text-center text-[10px] font-semibold text-mute">計算式: 重量 ×（1 + 回数 ÷ 30）</p>
+      <p className="text-center text-[10px] font-semibold text-mute">計算式: 重量 + 重量 × 回数 ÷ 30</p>
     </div>
   );
 }

@@ -167,7 +167,7 @@ function FeatureList() {
     <div className="space-y-3 pt-1 pb-2">
       <PlanStatus />
       <p className="px-1 text-xs font-bold text-mute" data-testid="pro-terms-note">
-        加入ページには Pro で追加される機能の用語（名前）のみを載せています。名前をタップすると、その機能の説明ページ（図つき）が開きます
+        加入ページには Pro で追加される機能の用語のみを載せています。名前をタップすると、図つきの説明ページが開きます
       </p>
       <ul className="glass divide-y divide-slate-900/6 overflow-hidden rounded-2xl">
         <li className="flex items-center gap-3 px-3 py-3" data-testid="pro-feature" data-feature="ads">

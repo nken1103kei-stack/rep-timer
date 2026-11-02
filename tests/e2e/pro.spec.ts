@@ -42,7 +42,7 @@ test("free plan: a silent banner ad, and Pro features open the upgrade sheet", a
   await expect(sheet).toContainText("広告なし");
   await expect(sheet).toContainText("無料のまま");
   // The join page lists feature names only; each one (except 広告なし) opens its own page with a diagram.
-  await expect(sheet.getByTestId("pro-terms-note")).toContainText("用語（名前）のみ");
+  await expect(sheet.getByTestId("pro-terms-note")).toContainText("用語のみ");
   await expect(sheet.getByTestId("pro-feature")).toHaveCount(6);
   await expect(sheet.locator("button[data-testid=pro-feature]")).toHaveCount(5);
   await expect(sheet.getByTestId("pro-where")).toHaveCount(0);
