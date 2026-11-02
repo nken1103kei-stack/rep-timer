@@ -41,6 +41,20 @@ test("free plan: a silent banner ad, and Pro features open the upgrade sheet", a
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText("広告なし");
   await expect(sheet).toContainText("無料のまま");
+  // The join page lists feature names only; each one (except 広告なし) opens its own page with a diagram.
+  await expect(sheet.getByTestId("pro-terms-note")).toBeVisible();
+  await expect(sheet.getByTestId("pro-feature")).toHaveCount(6);
+  await expect(sheet.locator("button[data-testid=pro-feature]")).toHaveCount(5);
+  await expect(sheet.getByTestId("pro-where")).toHaveCount(0);
+  const height = (await sheet.boundingBox())!.height;
+  await sheet.locator("[data-testid=pro-feature][data-feature=heatmap]").click();
+  await expect(sheet.getByTestId("pro-page")).toHaveAttribute("data-feature", "heatmap");
+  await expect(sheet.getByTestId("diagram-heatmap")).toBeVisible();
+  await expect(sheet.getByTestId("pro-where")).toContainText("カレンダー");
+  // Same height on every page.
+  expect(Math.round((await sheet.boundingBox())!.height)).toBe(Math.round(height));
+  await sheet.getByTestId("pro-back").click();
+  await expect(sheet.getByTestId("pro-feature")).toHaveCount(6);
   const config = await (await page.request.get("/api/config")).json();
   if (config.billing.enabled) await expect(sheet.getByTestId("pro-login")).toBeVisible();
   else await expect(sheet.getByTestId("pro-subscribe")).toHaveText("準備中");
@@ -51,6 +65,8 @@ test("free plan: a silent banner ad, and Pro features open the upgrade sheet", a
   await page.getByTestId("preset-add").click();
   await page.getByTestId("kind-superset").click();
   await expect(sheet).toBeVisible();
+  await expect(sheet.getByTestId("pro-page")).toHaveAttribute("data-feature", "superset");
+  await expect(sheet.getByTestId("diagram-superset")).toBeVisible();
   await closeSheet(page);
   await expect(sheet).toBeHidden();
   await closeSheet(page);
@@ -62,6 +78,8 @@ test("free plan: a silent banner ad, and Pro features open the upgrade sheet", a
   await expect(log.getByTestId("e1rm-lock")).toBeVisible();
   await log.getByTestId("set-rest").first().click();
   await expect(sheet).toBeVisible();
+  await expect(sheet.getByTestId("pro-page")).toHaveAttribute("data-feature", "rest");
+  await expect(sheet.getByTestId("diagram-rest")).toBeVisible();
   await closeSheet(page);
   await expect(sheet).toBeHidden();
   await expect(page.getByTestId("rest-banner")).toHaveCount(0);
@@ -125,9 +143,17 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   const log = page.getByTestId("log-sheet");
   await expect(log.getByTestId("e1rm-lock")).toHaveCount(0);
   await expect(log.getByTestId("e1rm-chart")).toBeVisible();
+  // The first tap on a Pro feature explains it with a coach mark; the tap goes through once it is closed.
   await log.getByTestId("set-type").first().click();
+  const coach = page.getByTestId("coach-mark");
+  await expect(coach).toHaveAttribute("data-feature", "rest");
+  await expect(log.getByTestId("set-type").first()).toHaveAttribute("data-type", "N");
+  await coach.getByTestId("coach-ok").click();
+  await expect(coach).toHaveCount(0);
   await expect(log.getByTestId("set-type").first()).toHaveAttribute("data-type", "W");
+  // Only once per feature.
   await log.getByTestId("set-rest").first().click();
+  await expect(coach).toHaveCount(0);
   const banner = page.getByTestId("rest-banner");
   const clock = page.getByTestId("rest-clock");
   await expect(banner).toBeVisible();
@@ -175,6 +201,9 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   await page.getByTestId("preset-add").click();
   const editor = page.getByTestId("preset-editor");
   await editor.getByTestId("kind-superset").click();
+  await expect(coach).toHaveAttribute("data-feature", "superset");
+  await coach.getByTestId("coach-ok").click();
+  await expect(editor.getByTestId("kind-superset")).toHaveAttribute("aria-checked", "true");
   await editor.getByRole("textbox", { name: "種目A", exact: true }).fill("20");
   await editor.getByRole("textbox", { name: "移動", exact: true }).fill("10");
   await editor.getByRole("textbox", { name: "セット数", exact: true }).fill("2");
@@ -193,6 +222,12 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   // Tempo timer: phases per rep and TUT.
   await page.getByTestId("preset-add").click();
   await editor.getByTestId("kind-tempo").click();
+  // 図で詳しく opens the feature's page instead.
+  await coach.getByTestId("coach-more").click();
+  await expect(page.getByTestId("pro-sheet").getByTestId("pro-page")).toHaveAttribute("data-feature", "tempo");
+  await closeSheet(page);
+  await editor.getByTestId("kind-tempo").click();
+  await expect(coach).toHaveCount(0);
   await expect(editor.getByTestId("editor-tut")).toHaveText("TUT 60秒 / セット");
   await editor.getByTestId("preset-save").click();
   await expect(page.getByTestId("summary-tut")).toContainText("TUT 60秒/セット");
@@ -213,7 +248,12 @@ test("subscribe to Pro, use every Pro feature, then cancel (local test mode)", a
   // Heatmap in the calendar.
   await page.getByTestId("calendar-button").click();
   await expect(page.getByTestId("heatmap-lock")).toHaveCount(0);
-  await expect(page.locator("[data-testid=heat-cell][data-cat=chest]")).toContainText("3");
+  // One record today: chest was trained once → the lightest shade, and cardio is not on the map.
+  await expect(page.locator("[data-testid=heat-cell][data-cat=chest]")).toContainText("1回");
+  await expect(page.locator("[data-testid=heat-cell][data-cat=chest]")).toHaveAttribute("data-level", "1");
+  await expect(page.locator("[data-testid=heat-cell][data-cat=legs]")).toHaveAttribute("data-level", "0");
+  await expect(page.locator("[data-testid=heat-cell][data-cat=cardio]")).toHaveCount(0);
+  await expect(page.getByTestId("heat-step")).toHaveCount(5);
   await page.getByTestId("cal-close").click();
 
   // Rest times are editable in settings.
@@ -244,8 +284,9 @@ test("the creator's account gets Pro for free, and Pro spots are marked with a c
   await expect(page.getByTestId("pro-button")).toContainText("未加入");
   await page.getByTestId("pro-button").click();
   await expect(page.getByTestId("plan-status")).toHaveAttribute("data-pro", "false");
-  await expect(page.getByTestId("pro-where")).toHaveCount(6);
-  await expect(page.getByTestId("pro-where").nth(1)).toContainText("記録画面");
+  await expect(page.getByTestId("pro-feature")).toHaveCount(6);
+  await page.locator("[data-testid=pro-feature][data-feature=rest]").click();
+  await expect(page.getByTestId("pro-where")).toContainText("記録画面");
   await closeSheet(page);
 
   // OWNER_EMAILS (a secret) lists the creator; that account is Pro without a subscription.
@@ -265,6 +306,7 @@ test("the creator's account gets Pro for free, and Pro spots are marked with a c
   await seedMenus(page);
   await openMenu(page, "ベンチプレス");
   await page.getByTestId("log-sheet").getByTestId("set-type").first().click();
+  await page.getByTestId("coach-ok").click();
   await expect(page.getByTestId("log-sheet").getByTestId("set-type").first()).toHaveAttribute("data-type", "W");
   await expect(page.getByTestId("pro-sheet")).toHaveCount(0);
   // The server agrees: checkout is refused for an account that already has Pro.

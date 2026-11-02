@@ -1,5 +1,5 @@
 import type { CategoryId } from "./catalog";
-import { setsOf } from "./stats";
+import { dayKey, setsOf } from "./stats";
 import type { LogEntry } from "./types";
 
 /** Epley estimate of the one-rep max. */
@@ -14,9 +14,22 @@ export function e1rmSeries(logs: LogEntry[], exerciseId: string, category: Categ
     .sort((a, b) => a.at - b.at);
 }
 
-/** Sets per body part (cardio counts rounds), for the heatmap. */
-export function setsByCategory(logs: { category: CategoryId; sets: number; detail?: unknown[] }[]) {
-  const out: Partial<Record<CategoryId, number>> = {};
-  for (const l of logs) out[l.category] = (out[l.category] ?? 0) + (l.detail?.length ?? Math.max(1, l.sets));
-  return out;
+/** Heatmap shades: 0 = not trained, then one shade darker every 2 sessions, up to 5 (9 or more). */
+export const HEAT_LEVELS = 5;
+export const heatLevel = (sessions: number) => (sessions <= 0 ? 0 : Math.min(HEAT_LEVELS, Math.ceil(sessions / 2)));
+/** The session range each shade stands for, for the legend: 1–2回 … 9回〜. */
+export const heatRange = (level: number) => (level >= HEAT_LEVELS ? `${level * 2 - 1}回〜` : `${level * 2 - 1}–${level * 2}回`);
+
+/** Muscle groups on the heatmap; cardio is not a body part, so it is left out. */
+export type HeatPart = Exclude<CategoryId, "cardio" | "other">;
+export const HEAT_PARTS: HeatPart[] = ["shoulder", "chest", "back", "arms", "legs", "abs"];
+
+/** How many times (days) each body part was trained, for the heatmap. */
+export function sessionsByPart(logs: { category: CategoryId; at: number }[]) {
+  const days: Partial<Record<HeatPart, Set<string>>> = {};
+  for (const l of logs) {
+    if (!(HEAT_PARTS as CategoryId[]).includes(l.category)) continue;
+    (days[l.category as HeatPart] ??= new Set()).add(dayKey(l.at));
+  }
+  return Object.fromEntries(Object.entries(days).map(([k, v]) => [k, v.size])) as Partial<Record<HeatPart, number>>;
 }

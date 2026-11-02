@@ -15,6 +15,8 @@ import { openProSheet, ProBadge, ProLock, useProGate } from "./Pro";
 import { newRest, RestBanner, type RestRun } from "./RestTimer";
 import { E1rmChart } from "./Charts";
 import { e1rmSeries } from "../lib/analytics";
+import { coachFirst } from "../lib/coach";
+import type { ProFeature } from "../lib/proSheet";
 
 const inputClass =
   "glass h-13 w-full rounded-2xl px-4 text-base font-semibold outline-none placeholder:text-slate-400 focus:outline-2 focus:outline-accent";
@@ -186,7 +188,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
           </div>
           <MemoField value={exercise.memo ?? ""} onChange={(memo) => updateExercise(exercise.id, { memo: memo || undefined })} />
           {!cardio && (
-            <ProLock label="推定1RMグラフは Pro で使えます" testId="e1rm-lock">
+            <ProLock label="推定1RMグラフは Pro で使えます" testId="e1rm-lock" feature="e1rm">
               <E1rmChart points={e1rmSeries(logs, exercise.id, exercise.category)} unit={unit} />
             </ProLock>
           )}
@@ -197,12 +199,16 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
               sets={form.sets}
               onChange={(sets) => setForm({ ...form, sets })}
               resting={rest?.next ? rest.next.index - 1 : rest ? form.sets.length - 1 : null}
-              onRest={(i) =>
-                gate(() => {
+              onRest={(i, el) =>
+                gate(
+                  () => {
                   // Opens ready, not running: the time can be set before tapping スタート.
                   const type = form.sets[i].type ?? "N";
                   setRest(newRest(type, restTimes[type], form.sets[i + 1] ? { index: i + 1, set: form.sets[i + 1] } : null));
-                })()
+                  },
+                  "rest",
+                  el,
+                )()
               }
             />
           )}
@@ -373,10 +379,12 @@ export function PresetEditor({ open, id, onClose }: { open: boolean; id: string 
               role="radio"
               aria-checked={kind === k.id}
               data-testid={`kind-${k.id}`}
-              onClick={() => {
+              onClick={(e) => {
                 haptic(8);
-                if (k.pro && !pro) openProSheet();
-                else setForm({ ...form, kind: k.id });
+                const choose = () => setForm({ ...form, kind: k.id });
+                if (!k.pro) choose();
+                else if (!pro) openProSheet(k.id as ProFeature);
+                else coachFirst(k.id as ProFeature, e.currentTarget, choose);
               }}
               className={`relative flex h-10 items-center justify-center gap-1 rounded-xl text-xs font-bold ${kind === k.id ? "text-white" : "text-ink"}`}
             >
@@ -554,7 +562,7 @@ export function AccountSheet({ open, onClose }: { open: boolean; onClose: () => 
     <Sheet open={open} onClose={onClose} title="設定" testId="account-sheet">
       <div className="space-y-4 pt-2 pb-2">
         <UnitToggle />
-        <ProLock label="セット別の休憩時間は Pro で使えます" testId="rest-times-lock">
+        <ProLock label="セット別の休憩時間は Pro で使えます" testId="rest-times-lock" feature="rest">
           <RestTimesSection />
         </ProLock>
         <DataSection />

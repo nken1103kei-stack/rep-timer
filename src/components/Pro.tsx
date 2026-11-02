@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { motion } from "motion/react";
-import { Activity, BadgeCheck, Ban, Crown, Flame, Layers, Lock, Metronome, Timer } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { BadgeCheck, Ban, ChevronLeft, ChevronRight, Crown, Lock, type LucideIcon } from "lucide-react";
 import { openBilling, usePro, useSession } from "../lib/sync";
 import { haptic } from "../lib/feedback";
 import { PrimaryButton, Sheet } from "./ui";
+import { GUIDES, guideOf, type FeatureGuide } from "./ProGuide";
+import { closeCoach, coachFirst, useCoach } from "../lib/coach";
 
-import { openProSheet, useProSheet } from "../lib/proSheet";
+import { openProSheet, useProSheet, type ProFeature } from "../lib/proSheet";
 
 export { openProSheet, useProSheet };
 
-/** Runs `action` for Pro users; everyone else sees the upgrade sheet. */
+/**
+ * Runs `action` for Pro users (after a one-time coach mark when `feature` is given);
+ * everyone else sees the upgrade sheet, opened on that feature's page.
+ */
 export function useProGate() {
   const pro = usePro();
-  return (action: () => void) => () => {
-    if (pro) action();
-    else {
+  return (action: () => void, feature?: ProFeature, el?: Element | null) => () => {
+    if (pro) {
+      if (feature) coachFirst(feature, el ?? null, action);
+      else action();
+    } else {
       haptic(10);
-      openProSheet();
+      openProSheet(feature ?? null);
     }
   };
 }
@@ -31,10 +38,13 @@ export function ProBadge({ className = "" }: { className?: string }) {
   );
 }
 
-/** Covers a Pro-only panel for free users; tapping opens the upgrade sheet. */
-export function ProLock({ children, label, testId }: { children: ReactNode; label: string; testId?: string }) {
+/**
+ * Covers a Pro-only panel for free users; tapping opens the upgrade sheet on that feature's page.
+ * For Pro users the panel is live, and the first tap on it shows the feature's coach mark.
+ */
+export function ProLock({ children, label, testId, feature }: { children: ReactNode; label: string; testId?: string; feature: ProFeature }) {
   const pro = usePro();
-  if (pro) return <>{children}</>;
+  if (pro) return <div onClickCapture={(e) => coachFirst(feature, e.currentTarget)}>{children}</div>;
   return (
     <div className="relative" data-testid={testId}>
       <div aria-hidden className="pointer-events-none blur-[6px] select-none">
@@ -43,7 +53,7 @@ export function ProLock({ children, label, testId }: { children: ReactNode; labe
       <motion.button
         type="button"
         whileTap={{ scale: 0.97 }}
-        onClick={() => openProSheet()}
+        onClick={() => openProSheet(feature)}
         className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-2xl bg-white/40 text-sm font-bold"
         data-testid="pro-lock"
       >
@@ -57,18 +67,9 @@ export function ProLock({ children, label, testId }: { children: ReactNode; labe
   );
 }
 
-/** Each Pro feature with where it lives in the app; the same crown marks it on screen. */
-const FEATURES = [
-  { icon: Ban, title: "広告なし", text: "画面がすっきり。トレーニングに集中", where: "メニュー一覧・カレンダー" },
-  { icon: Timer, title: "セット別の休憩タイマー", text: "W・N・D ごとに休憩時間が自動で切り替わり、休憩中も次のセットとプレートの組み合わせが見える", where: "記録画面の「SET」と ⏱ ボタン、設定の休憩時間" },
-  { icon: Layers, title: "スーパーセットタイマー", text: "種目A → 移動 → 種目B → 本休憩 の2段階を自動で進行", where: "タイマーの追加・編集 →「スーパーセット」" },
-  { icon: Metronome, title: "テンポ・メトロノーム", text: "下ろす・止める・挙げる・締めるを音と振動でカウント。TUT も記録", where: "タイマーの追加・編集 →「テンポ」" },
-  { icon: Flame, title: "部位ヒートマップ", text: "どこを鍛えて、どこをサボっているかが一目でわかる", where: "カレンダー" },
-  { icon: Activity, title: "推定1RMグラフ", text: "種目ごとの最大挙上重量の伸びをグラフで確認", where: "記録画面の上部" },
-];
-
 export function ProSheet({ onLogin }: { onLogin: () => void }) {
   const open = useProSheet((s) => s.open);
+  const page = useProSheet((s) => s.page);
   const close = () => useProSheet.setState({ open: false });
   const { user, plan, billing } = useSession();
   const [busy, setBusy] = useState(false);
@@ -88,62 +89,221 @@ export function ProSheet({ onLogin }: { onLogin: () => void }) {
     }
   };
 
-  return (
-    <Sheet open={open} onClose={close} testId="pro-sheet" title={<span className="flex items-center gap-2">REPS Pro <ProBadge /></span>}>
-      <div className="space-y-3 pt-1 pb-2">
-        <PlanStatus />
-        <ul className="space-y-2">
-          {FEATURES.map((f, i) => (
-            <motion.li
-              key={f.title}
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0, transition: { delay: 0.04 * i } }}
-              className="glass flex items-start gap-3 rounded-2xl p-3"
-            >
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent">
-                <f.icon size={18} strokeWidth={2.4} />
-              </span>
-              <span>
-                <span className="block text-sm font-bold">{f.title}</span>
-                <span className="block text-xs leading-relaxed text-mute">{f.text}</span>
-                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-bold text-accent" data-testid="pro-where">
-                  <Crown size={10} strokeWidth={3} /> {f.where}
-                </span>
-              </span>
-            </motion.li>
-          ))}
-        </ul>
-        <p className="text-center text-[11px] font-semibold text-mute">
-          画面では <Crown size={10} strokeWidth={3} className="inline text-accent" /> と <ProBadge /> の付いた所が Pro の機能です。記録・履歴・カスタム種目・CSV の読み書きは無料のまま使えます
-        </p>
+  const action =
+    plan.status === "owner" ? null : plan.pro ? (
+      <PrimaryButton tone="ghost" testId="pro-manage" disabled={busy} onClick={() => void go("portal")}>
+        プランの管理・解約
+      </PrimaryButton>
+    ) : !billing.enabled ? (
+      <PrimaryButton testId="pro-subscribe" disabled onClick={() => undefined}>
+        準備中
+      </PrimaryButton>
+    ) : !user ? (
+      <PrimaryButton
+        testId="pro-login"
+        onClick={() => {
+          close();
+          onLogin();
+        }}
+      >
+        Google でログインして登録
+      </PrimaryButton>
+    ) : (
+      <PrimaryButton testId="pro-subscribe" disabled={busy} onClick={() => void go("checkout")}>
+        Pro に登録する（{billing.price}）
+      </PrimaryButton>
+    );
 
-        {plan.status === "owner" ? null : plan.pro ? (
-          <PrimaryButton tone="ghost" testId="pro-manage" disabled={busy} onClick={() => void go("portal")}>
-            プランの管理・解約
-          </PrimaryButton>
-        ) : !billing.enabled ? (
-          <PrimaryButton testId="pro-subscribe" disabled onClick={() => undefined}>
-            準備中
-          </PrimaryButton>
-        ) : !user ? (
-          <PrimaryButton
-            testId="pro-login"
-            onClick={() => {
-              close();
-              onLogin();
-            }}
+  return (
+    <Sheet
+      open={open}
+      onClose={close}
+      testId="pro-sheet"
+      title={
+        page ? (
+          <button
+            type="button"
+            onClick={() => useProSheet.setState({ page: null })}
+            className="flex items-center gap-1 text-base font-bold text-mute"
+            data-testid="pro-back"
           >
-            Google でログインして登録
-          </PrimaryButton>
+            <ChevronLeft size={20} /> REPS Pro
+          </button>
         ) : (
-          <PrimaryButton testId="pro-subscribe" disabled={busy} onClick={() => void go("checkout")}>
-            Pro に登録する（{billing.price}）
-          </PrimaryButton>
+          <span className="flex items-center gap-2">
+            REPS Pro <ProBadge />
+          </span>
+        )
+      }
+      // The buttons stay on their own band, so they are there on every page.
+      footer={
+        (action || error || !plan.pro) && (
+          <div className="space-y-2 pb-1">
+            {action}
+            {!plan.pro && <p className="text-center text-[11px] text-mute">いつでも解約できます。解約後も期間の終わりまで Pro を使えます</p>}
+            {error && <p className="text-center text-sm font-semibold text-danger">{error}</p>}
+          </div>
+        )
+      }
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {page ? (
+          <motion.div key={page} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }} transition={{ duration: 0.18 }}>
+            <FeaturePage guide={guideOf(page)} />
+          </motion.div>
+        ) : (
+          <motion.div key="list" initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.18 }}>
+            <FeatureList />
+          </motion.div>
         )}
-        {!plan.pro && <p className="text-center text-[11px] text-mute">いつでも解約できます。解約後も期間の終わりまで Pro を使えます</p>}
-        {error && <p className="text-center text-sm font-semibold text-danger">{error}</p>}
-      </div>
+      </AnimatePresence>
     </Sheet>
+  );
+}
+
+/** The join page: feature names only, each opening its own explanation page. */
+function FeatureList() {
+  return (
+    <div className="space-y-3 pt-1 pb-2">
+      <PlanStatus />
+      <p className="px-1 text-xs font-bold text-mute" data-testid="pro-terms-note">
+        Pro で追加されるのは次の機能です。名前をタップすると、使い方を図で説明します
+      </p>
+      <ul className="glass divide-y divide-slate-900/6 overflow-hidden rounded-2xl">
+        <li className="flex items-center gap-3 px-3 py-3" data-testid="pro-feature" data-feature="ads">
+          <FeatureIcon icon={Ban} />
+          <span className="flex-1 text-sm font-bold">広告なし</span>
+        </li>
+        {GUIDES.map((g) => (
+          <li key={g.id}>
+            <button
+              type="button"
+              onClick={() => {
+                haptic(6);
+                useProSheet.setState({ page: g.id });
+              }}
+              className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-slate-900/5"
+              data-testid="pro-feature"
+              data-feature={g.id}
+            >
+              <FeatureIcon icon={g.icon} />
+              <span className="flex-1 text-sm font-bold">{g.title}</span>
+              <ChevronRight size={18} className="text-mute" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="text-center text-[11px] font-semibold text-mute">
+        画面では <Crown size={10} strokeWidth={3} className="inline text-accent" /> と <ProBadge /> の付いた所が Pro の機能です。記録・履歴・カスタム種目・CSV の読み書きは無料のまま使えます
+      </p>
+    </div>
+  );
+}
+
+function FeatureIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-accent/12 text-accent">
+      <Icon size={18} strokeWidth={2.4} />
+    </span>
+  );
+}
+
+/** One Pro feature explained: what it does, a diagram, how to use it and where it lives. */
+function FeaturePage({ guide }: { guide: FeatureGuide }) {
+  return (
+    <div className="space-y-3 pt-1 pb-2" data-testid="pro-page" data-feature={guide.id}>
+      <div className="flex items-center gap-3">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#ff4f00] to-[#ff9f0a] text-white">
+          <guide.icon size={24} strokeWidth={2.4} />
+        </span>
+        <h2 className="text-lg leading-tight font-extrabold">{guide.title}</h2>
+      </div>
+      <p className="text-sm leading-relaxed font-semibold">{guide.lead}</p>
+      <div className="glass rounded-2xl p-3">
+        <guide.Diagram />
+      </div>
+      <div>
+        <div className="mb-1.5 px-1 text-xs font-extrabold text-mute">使い方</div>
+        <ol className="space-y-1.5">
+          {guide.steps.map((step, i) => (
+            <li key={step} className="flex gap-2 text-sm leading-relaxed">
+              <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-ink font-display text-[11px] font-bold text-white">{i + 1}</span>
+              {step}
+            </li>
+          ))}
+        </ol>
+      </div>
+      <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-bold text-accent" data-testid="pro-where">
+        <Crown size={11} strokeWidth={3} /> 場所: {guide.where}
+      </span>
+    </div>
+  );
+}
+
+/** A spotlight on the tapped Pro control with a short explanation; shown once per feature. */
+export function CoachMark() {
+  const active = useCoach((s) => s.active);
+  const guide = active && guideOf(active.feature);
+  const pad = 6;
+  const r = active?.rect;
+  // The bubble goes on the roomier side of the spotlight.
+  const below = r ? r.top + r.height / 2 < window.innerHeight / 2 : true;
+  return (
+    <AnimatePresence>
+      {active && guide && r && (
+        <motion.div
+          key="coach"
+          className="fixed inset-0 z-[80]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          data-testid="coach-mark"
+          data-feature={active.feature}
+          role="dialog"
+          aria-modal="true"
+          aria-label={guide.title}
+        >
+          <div
+            className="absolute rounded-2xl shadow-[0_0_0_9999px_rgb(11_12_15/0.62)] ring-2 ring-white"
+            style={{ left: r.left - pad, top: r.top - pad, width: r.width + pad * 2, height: r.height + pad * 2 }}
+          />
+          <motion.div
+            initial={{ y: below ? -8 : 8, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="absolute inset-x-4 mx-auto max-w-sm rounded-3xl bg-white p-4 shadow-2xl"
+            style={
+              below
+                ? { top: Math.max(16, Math.min(r.bottom + pad + 14, window.innerHeight - 260)) }
+                : { bottom: Math.max(16, Math.min(window.innerHeight - r.top + pad + 14, window.innerHeight - 260)) }
+            }
+          >
+            <div className="mb-1.5 flex items-center gap-2 text-sm font-extrabold">
+              <FeatureIcon icon={guide.icon} />
+              <span className="flex-1">{guide.title}</span>
+              <ProBadge />
+            </div>
+            <p className="text-[13px] leading-relaxed font-semibold">{guide.lead}</p>
+            <p className="mt-1.5 text-xs leading-relaxed text-mute" data-testid="coach-tip">{guide.tip}</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                className="h-10 flex-1 rounded-full bg-slate-900/6 text-sm font-bold"
+                data-testid="coach-more"
+                onClick={() => {
+                  closeCoach(false);
+                  openProSheet(active.feature);
+                }}
+              >
+                図で詳しく
+              </button>
+              <button type="button" className="h-10 flex-1 rounded-full bg-ink text-sm font-bold text-white" data-testid="coach-ok" onClick={() => closeCoach()}>
+                わかった
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

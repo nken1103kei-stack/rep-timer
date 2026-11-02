@@ -17,7 +17,8 @@ import { LibrarySheet } from "./components/LibrarySheet";
 import { CalendarView } from "./components/CalendarView";
 import { PrimaryButton, Sheet, spring } from "./components/ui";
 import { copyText, type ShareResult } from "./lib/stats";
-import { openProSheet, ProSheet } from "./components/Pro";
+import { CoachMark, openProSheet, ProSheet } from "./components/Pro";
+import type { ProFeature } from "./lib/proSheet";
 
 type SheetState =
   | { type: "library" }
@@ -103,7 +104,7 @@ export default function App() {
     const preset =
       exercise?.category === "cardio" ? cardioTimer(exercise) : (s.presets.find((p) => p.id === s.selectedPresetId) ?? s.presets[0]);
     // Superset and tempo timers stay saved after a plan ends, but running them needs Pro.
-    if ("kind" in preset && preset.kind && preset.kind !== "interval" && !useSession.getState().plan.pro) return openProSheet();
+    if ("kind" in preset && preset.kind && preset.kind !== "interval" && !useSession.getState().plan.pro) return openProSheet(preset.kind as ProFeature);
     setRun({ preset, exercise });
   };
 
@@ -127,7 +128,7 @@ export default function App() {
             variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}
           >
             {[
-              <Header key="h" onAccount={() => setSheet({ type: "account" })} onCalendar={() => setCalendarOpen(true)} onPro={openProSheet} />,
+              <Header key="h" onAccount={() => setSheet({ type: "account" })} onCalendar={() => setCalendarOpen(true)} onPro={() => openProSheet()} />,
               <QuoteCard key="q" />,
               <TimerPanel key="t" onStart={start} onEditPreset={(id) => setSheet({ type: "preset", id: id ?? null })} />,
               <MenuList
@@ -162,7 +163,8 @@ export default function App() {
       <PresetEditor open={sheet?.type === "preset"} id={sheet?.type === "preset" ? sheet.id : null} onClose={close} />
       <AccountSheet open={sheet?.type === "account"} onClose={close} />
       <ProSheet onLogin={() => setSheet({ type: "account" })} />
-      <Sheet open={manualShare !== null} onClose={() => setManualShare(null)} title="共有する内容" testId="share-sheet" above>
+      <CoachMark />
+      <Sheet open={manualShare !== null} onClose={() => setManualShare(null)} title="共有する内容" testId="share-sheet" above fit>
         <div className="space-y-3 pt-1 pb-2">
           <p className="text-xs font-semibold text-mute">この端末では共有画面を開けませんでした。下の文章をコピーして、LINE や SNS に貼り付けてください。</p>
           <textarea

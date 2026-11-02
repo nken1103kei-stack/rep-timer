@@ -3,7 +3,7 @@ import { isOwner, isPro, signStripePayload, verifyStripeSignature } from "../../
 import { exportCsv, importCsv, parseCsv } from "../../src/lib/csv";
 import { platesPerSide } from "../../src/lib/plates";
 import { buildSegments, totalMs, tutOf } from "../../src/lib/timer";
-import { e1rm, e1rmSeries, setsByCategory } from "../../src/lib/analytics";
+import { e1rm, e1rmSeries, heatLevel, heatRange, sessionsByPart } from "../../src/lib/analytics";
 import { nextSetType } from "../../src/lib/record";
 import type { Exercise, LogEntry } from "../../src/lib/types";
 
@@ -121,7 +121,23 @@ describe("pro tools", () => {
     expect(e1rm(100, 1)).toBe(100);
     expect(e1rm(60, 30)).toBe(120);
     expect(e1rmSeries(logs, "b", "chest").map((p) => Math.round(p.value * 10) / 10)).toEqual([79.2]);
-    expect(setsByCategory([{ category: "chest", sets: 2, detail: [1, 2, 3] }, { category: "cardio", sets: 2 }])).toEqual({ chest: 3, cardio: 2 });
+  });
+
+  it("counts each body part once per day for the heatmap, without cardio", () => {
+    const day = (d: number, h = 10) => new Date(2026, 10, d, h).getTime();
+    const counts = sessionsByPart([
+      { category: "chest", at: day(1) },
+      { category: "chest", at: day(1, 18) },
+      { category: "chest", at: day(3) },
+      { category: "legs", at: day(2) },
+      { category: "cardio", at: day(2) },
+    ]);
+    expect(counts).toEqual({ chest: 2, legs: 1 });
+  });
+
+  it("gets one shade darker every 2 sessions, 5 shades in all", () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 30].map(heatLevel)).toEqual([0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+    expect([1, 2, 3, 4, 5].map(heatRange)).toEqual(["1–2回", "3–4回", "5–6回", "7–8回", "9回〜"]);
   });
 
   it("cycles set types N → W → D → N", () => {

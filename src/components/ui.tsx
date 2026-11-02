@@ -8,6 +8,7 @@ import { unitLabel } from "../lib/stats";
 import type { SetEntry } from "../lib/types";
 import { nextSetType, SET_TYPE } from "../lib/record";
 import { openProSheet } from "../lib/proSheet";
+import { coachFirst } from "../lib/coach";
 import { usePro } from "../lib/sync";
 import type { CardioForm } from "../lib/record";
 
@@ -47,6 +48,7 @@ export function Sheet({
   testId,
   above = false,
   footer,
+  fit = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -57,6 +59,8 @@ export function Sheet({
   above?: boolean;
   /** Pinned below the scrolling content on its own band, so nothing scrolls underneath it. */
   footer?: ReactNode;
+  /** Size to the content instead of the fixed height; only for sheets whose content never changes. */
+  fit?: boolean;
 }) {
   const controls = useDragControls();
   const keyboard = useKeyboardInset();
@@ -78,8 +82,10 @@ export function Sheet({
             role="dialog"
             aria-modal="true"
             data-testid={testId}
-            className={`glass-strong fixed inset-x-0 bottom-0 ${above ? "z-[65]" : "z-50"} mx-auto flex max-h-[88dvh] max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]`}
-            style={keyboard ? { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 24px)` } : undefined}
+            className={`glass-strong fixed inset-x-0 bottom-0 ${above ? "z-[65]" : "z-50"} mx-auto flex ${fit ? "max-h-[88dvh]" : "h-[88dvh]"} max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]`}
+            // A fixed height, so switching a type or tab inside the sheet never makes it jump; only the keyboard shrinks it.
+            style={keyboard ? { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 24px)`, height: fit ? undefined : `calc(100dvh - ${keyboard}px - 24px)` } : undefined}
+            data-fixed={fit ? undefined : true}
             data-keyboard={keyboard || undefined}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
@@ -343,7 +349,7 @@ export function SetRows({
 }: {
   sets: SetEntry[];
   onChange: (s: SetEntry[]) => void;
-  onRest?: (i: number) => void;
+  onRest?: (i: number, el: Element) => void;
   resting?: number | null;
 }) {
   const unit = useStore((s) => s.unit);
@@ -369,10 +375,10 @@ export function SetRows({
                 aria-label={`${i + 1}セット目の種類`}
                 data-testid="set-type"
                 data-type={set.type ?? "N"}
-                onClick={() => {
+                onClick={(e) => {
                   haptic(8);
-                  if (!pro) openProSheet();
-                  else update(i, { type: nextSetType(set.type ?? "N") });
+                  if (!pro) openProSheet("rest");
+                  else coachFirst("rest", e.currentTarget, () => update(i, { type: nextSetType(set.type ?? "N") }));
                 }}
                 className="relative flex w-10 shrink-0 flex-col items-center leading-none"
               >
@@ -413,7 +419,7 @@ export function SetRows({
                   whileTap={{ scale: 0.85 }}
                   aria-label={`${i + 1}セット目の後に休憩`}
                   data-testid="set-rest"
-                  onClick={() => onRest(i)}
+                  onClick={(e) => onRest(i, e.currentTarget)}
                   className={`relative grid size-9 shrink-0 place-items-center rounded-full ${resting === i ? "bg-rest text-white" : "bg-rest/10 text-rest"}`}
                 >
                   <ProDot className="-top-1 -right-1" />

@@ -266,7 +266,13 @@ test("menus are color-coded by body part", async ({ page }) => {
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor.getByTestId("category-option")).toHaveCount(8);
+  // The sheet keeps one height whatever the type: cardio has fewer fields, but nothing jumps.
+  const height = Math.round((await editor.boundingBox())!.height);
+  await editor.locator("[data-testid=category-option][data-cat=cardio]").click();
+  await expect(editor.getByTestId("cardio-fields")).toBeVisible();
+  expect(Math.round((await editor.boundingBox())!.height)).toBe(height);
   await editor.locator("[data-testid=category-option][data-cat=legs]").click();
+  expect(Math.round((await editor.boundingBox())!.height)).toBe(height);
   await editor.getByTestId("menu-save").click();
   await expect(editor).toBeHidden();
   await expect(card(page, "デッドリフト").getByTestId("category-badge")).toHaveText("脚");

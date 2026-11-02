@@ -1,26 +1,25 @@
 import { motion } from "motion/react";
-import { CATEGORIES, displayWeight, type CategoryId, type Unit } from "../lib/catalog";
+import { category, displayWeight, type Unit } from "../lib/catalog";
+import { HEAT_PARTS, heatLevel, heatRange, type HeatPart } from "../lib/analytics";
 import { unitLabel } from "../lib/stats";
 import { ProBadge } from "./Pro";
 
-const color = (id: CategoryId) => CATEGORIES.find((c) => c.id === id)!.color;
+/** Not trained, then 5 shades of the accent colour from light to dark. */
+export const HEAT_COLORS = ["rgb(15 23 42 / 0.08)", "#ffc9a6", "#ffa36b", "#ff7a33", "#ff4f00", "#b83900"];
 
-/** Front and back silhouettes; each muscle group is tinted by how many sets it got. */
-export function BodyHeatmap({ counts }: { counts: Partial<Record<CategoryId, number>> }) {
-  const max = Math.max(1, ...Object.values(counts).map((v) => v ?? 0));
-  const fill = (id: CategoryId) => {
-    const n = counts[id] ?? 0;
-    return { fill: n ? color(id) : "rgb(15 23 42 / 0.08)", fillOpacity: n ? 0.25 + 0.75 * (n / max) : 1 };
-  };
-  const part = (id: CategoryId, d: string, key: string) => (
+/** Front and back silhouettes; each muscle group gets darker the more times it was trained. */
+export function BodyHeatmap({ counts }: { counts: Partial<Record<HeatPart, number>> }) {
+  const level = (id: HeatPart) => heatLevel(counts[id] ?? 0);
+  const part = (id: HeatPart, d: string, key: string) => (
     <motion.path
       key={key}
       d={d}
       data-part={id}
+      data-level={level(id)}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.4 }}
-      {...fill(id)}
+      fill={HEAT_COLORS[level(id)]}
       stroke="#fff"
       strokeWidth={1.5}
     />
@@ -48,15 +47,44 @@ export function BodyHeatmap({ counts }: { counts: Partial<Record<CategoryId, num
         {figure("front")}
         {figure("back")}
       </div>
-      <div className="mt-2 grid grid-cols-4 gap-1.5">
-        {CATEGORIES.filter((c) => c.id !== "other").map((c) => (
-          <div key={c.id} className="flex items-center justify-between rounded-lg bg-white/70 px-2 py-1 text-[11px] font-bold" data-testid="heat-cell" data-cat={c.id}>
-            <span className="flex items-center gap-1">
-              <span className="size-2 rounded-full" style={{ background: c.color, opacity: counts[c.id] ? 1 : 0.25 }} />
-              {c.label}
+      <HeatLegend />
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
+        {HEAT_PARTS.map((id) => (
+          <div
+            key={id}
+            className="flex items-center justify-between rounded-lg bg-white/70 px-2 py-1 text-[11px] font-bold"
+            data-testid="heat-cell"
+            data-cat={id}
+            data-level={level(id)}
+          >
+            <span className="flex items-center gap-1.5">
+              <span className="size-3 rounded-[4px]" style={{ background: HEAT_COLORS[level(id)] }} />
+              {category(id).label}
             </span>
-            <span className={counts[c.id] ? "" : "text-slate-400"}>{counts[c.id] ?? 0}</span>
+            <span className={counts[id] ? "" : "text-slate-400"}>{counts[id] ?? 0}回</span>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 少 → 多: the five shades and how many sessions each one means. */
+function HeatLegend() {
+  return (
+    <div className="mt-3" data-testid="heat-legend">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold text-mute">
+        <span>少</span>
+        <div className="grid flex-1 grid-cols-5 gap-1">
+          {HEAT_COLORS.slice(1).map((c, i) => (
+            <span key={c} className="h-2.5 rounded-full" style={{ background: c }} data-testid="heat-step" aria-label={heatRange(i + 1)} />
+          ))}
+        </div>
+        <span>多</span>
+      </div>
+      <div className="mt-1 grid grid-cols-5 gap-1 px-[18px] text-center text-[9px] font-semibold text-mute">
+        {HEAT_COLORS.slice(1).map((_, i) => (
+          <span key={i}>{heatRange(i + 1)}</span>
         ))}
       </div>
     </div>
