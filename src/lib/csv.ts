@@ -1,8 +1,9 @@
 import { CATEGORIES, guessCategory, fromUnit, type CategoryId, type Unit } from "./catalog";
+import type { CardioForm } from "./record";
 import { setsOf } from "./stats";
 import type { Exercise, LogEntry, SetEntry, SetType } from "./types";
 
-const HEADER = ["日時", "種目", "部位", "セット", "種類", "重量(kg)", "回数", "運動(分)", "休憩(分)", "ラウンド"];
+const HEADER = ["日時", "種目", "部位", "セット", "種類", "重量(kg)", "回数", "運動(分)", "休憩(分)", "ラウンド", "運動(秒)", "休憩(秒)"];
 
 const cell = (v: string | number) => {
   const s = String(v);
@@ -24,11 +25,11 @@ export function exportCsv(logs: LogEntry[], exercises: Exercise[]): string {
     const category: CategoryId = ex?.category ?? log.category ?? "other";
     const label = CATEGORIES.find((c) => c.id === category)?.label ?? "その他";
     if (category === "cardio") {
-      rows.push([stamp(log.at), name, label, 1, "", "", "", log.reps, log.rest ?? 0, log.sets].map(cell).join(","));
+      rows.push([stamp(log.at), name, label, 1, "", "", "", log.reps, log.rest ?? 0, log.sets, log.workSec ?? 0, log.restSec ?? 0].map(cell).join(","));
       continue;
     }
     setsOf({ ...log, category }).forEach((s, i) => {
-      rows.push([stamp(log.at), name, label, i + 1, s.type ?? "", s.weight, s.reps, "", "", ""].map(cell).join(","));
+      rows.push([stamp(log.at), name, label, i + 1, s.type ?? "", s.weight, s.reps, "", "", "", "", ""].map(cell).join(","));
     });
   }
   return "﻿" + rows.join("\r\n") + "\r\n";
@@ -82,6 +83,8 @@ const COLS = {
   seconds: ["duration_seconds", "seconds", "duration (seconds)"],
   rest: ["休憩(分)"],
   rounds: ["ラウンド"],
+  workSec: ["運動(秒)"],
+  restSec: ["休憩(秒)"],
 } as const;
 
 const SET_TYPES: Record<string, SetType> = { w: "W", warmup: "W", "warm up": "W", n: "N", normal: "N", d: "D", dropset: "D", "drop set": "D" };
@@ -103,7 +106,7 @@ export function importCsv(text: string, existing: { exercises: Exercise[]; logs:
   const num = (row: string[], i: number) => (i >= 0 ? Number((row[i] ?? "").replace(/[^0-9.\-]/g, "")) || 0 : 0);
   const exercises = [...existing.exercises];
   const created: Exercise[] = [];
-  const groups = new Map<string, { at: number; ex: Exercise; sets: SetEntry[]; cardio?: { reps: number; rest: number; sets: number } }>();
+  const groups = new Map<string, { at: number; ex: Exercise; sets: SetEntry[]; cardio?: CardioForm }>();
   let skipped = 0;
 
   for (const row of body) {
@@ -126,8 +129,15 @@ export function importCsv(text: string, existing: { exercises: Exercise[]; logs:
     groups.set(key, group);
 
     if (ex.category === "cardio") {
-      const minutes = num(row, idx.minutes) || Math.round(num(row, idx.seconds) / 60);
-      group.cardio = { reps: Math.max(1, minutes), rest: num(row, idx.rest), sets: Math.max(1, num(row, idx.rounds) || 1) };
+      // Our own files give minutes plus seconds; other apps give the whole duration in seconds.
+      const total = num(row, idx.minutes) * 60 + num(row, idx.workSec) || num(row, idx.seconds) || 60;
+      group.cardio = {
+        reps: Math.floor(total / 60),
+        ...(total % 60 ? { workSec: total % 60 } : {}),
+        rest: num(row, idx.rest),
+        ...(num(row, idx.restSec) ? { restSec: num(row, idx.restSec) } : {}),
+        sets: Math.max(1, num(row, idx.rounds) || 1),
+      };
       continue;
     }
     let weight = 0;
@@ -154,7 +164,7 @@ export function importCsv(text: string, existing: { exercises: Exercise[]; logs:
   // New menus start from their latest imported record.
   for (const ex of created) {
     const last = logs.filter((l) => l.exerciseId === ex.id).sort((a, b) => b.at - a.at)[0];
-    if (last) Object.assign(ex, { weight: last.weight, reps: last.reps, sets: last.sets, detail: last.detail, ...(ex.category === "cardio" ? { rest: last.rest ?? 0 } : {}) });
+    if (last) Object.assign(ex, { weight: last.weight, reps: last.reps, sets: last.sets, detail: last.detail, ...(ex.category === "cardio" ? { rest: last.rest ?? 0, workSec: last.workSec, restSec: last.restSec } : {}) });
   }
   return { exercises: created, logs, skipped };
 }

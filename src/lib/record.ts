@@ -1,4 +1,4 @@
-import { setsOf } from "./stats";
+import { cardioRestSec, cardioWorkSec, setsOf } from "./stats";
 import type { Exercise, LogEntry, SetEntry } from "./types";
 
 import type { SetType } from "./types";
@@ -12,7 +12,7 @@ export const SET_TYPE: Record<SetType, { label: string; short: string; color: st
 /** Tap order on the set label: N → W → D → N. */
 export const nextSetType = (t: SetType | undefined): SetType => (t === "W" ? "D" : t === "D" ? "N" : "W");
 
-export type CardioForm = { reps: number; rest: number; sets: number };
+export type CardioForm = { reps: number; rest: number; sets: number; workSec?: number; restSec?: number };
 export type RecordForm = { sets: SetEntry[]; cardio: CardioForm };
 
 /**
@@ -25,7 +25,7 @@ export function initialRecord(ex: Exercise, last: LogEntry | undefined, rounds?:
   if (rounds) {
     sets = Array.from({ length: rounds }, (_, i) => ({ ...(sets[i] ?? sets[sets.length - 1]) }));
   }
-  return { sets, cardio: { reps: ex.reps, rest: ex.rest ?? 0, sets: Math.max(1, ex.sets) } };
+  return { sets, cardio: { reps: ex.reps, rest: ex.rest ?? 0, sets: Math.max(1, ex.sets), ...(ex.workSec ? { workSec: ex.workSec } : {}), ...(ex.restSec ? { restSec: ex.restSec } : {}) } };
 }
 
 export function toLog(ex: Exercise, form: RecordForm): Omit<LogEntry, "id" | "at" | "name" | "category"> {
@@ -34,11 +34,11 @@ export function toLog(ex: Exercise, form: RecordForm): Omit<LogEntry, "id" | "at
   return { exerciseId: ex.id, weight: first.weight, reps: first.reps, sets: form.sets.length, detail: form.sets };
 }
 
-/** Interval-timer settings of a cardio menu (minutes → seconds). */
+/** Interval-timer settings of a cardio menu (minutes and seconds → seconds). */
 export const cardioTimer = (ex: Exercise) => ({
   id: `cardio-${ex.id}`,
   name: ex.name,
-  work: ex.reps * 60,
-  rest: (ex.rest ?? 0) * 60,
+  work: cardioWorkSec(ex),
+  rest: cardioRestSec(ex),
   rounds: Math.max(1, ex.sets),
 });

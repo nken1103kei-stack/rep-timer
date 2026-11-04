@@ -48,6 +48,17 @@ describe("cardio timer link", () => {
     expect(formatSet({ ...run, sets: 1, rest: 0 }, "kg")).toBe("10分");
   });
 
+  it("manages cardio in minutes and seconds", () => {
+    const interval = { ...run, reps: 12, workSec: 30, rest: 0, restSec: 45 };
+    expect(cardioTimer(interval)).toMatchObject({ work: 750, rest: 45 });
+    expect(formatSet(interval, "kg")).toBe("12分30秒 × 3（休憩45秒）");
+    expect(formatSet({ ...interval, sets: 1, rest: 0, restSec: 0 }, "kg")).toBe("12分30秒");
+    const record = toLog(interval, initialRecord(interval, undefined));
+    expect(record).toMatchObject({ reps: 12, workSec: 30, restSec: 45 });
+    const data = normalizeData({ exercises: [interval] });
+    expect(data.exercises[0]).toMatchObject({ workSec: 30, restSec: 45 });
+  });
+
   it("rest 0 runs the work rounds back to back", () => {
     const segments = buildSegments({ prepare: 0, ...cardioTimer({ ...run, rest: 0 }) });
     expect(segments.map((s) => s.phase)).toEqual(["work", "work", "work"]);

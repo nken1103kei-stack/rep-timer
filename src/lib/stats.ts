@@ -1,7 +1,7 @@
 import { category, CATEGORIES, displayWeight, toUnit, type CategoryId, type Unit } from "./catalog";
 import type { Exercise, LogEntry, SetEntry } from "./types";
 
-type SetLike = { category: CategoryId; weight: number; reps: number; sets: number; detail?: SetEntry[]; rest?: number };
+type SetLike = { category: CategoryId; weight: number; reps: number; sets: number; detail?: SetEntry[]; rest?: number; workSec?: number; restSec?: number };
 
 /** The individual sets of a log or menu (older logs only stored one weight/reps for all sets). */
 export const setsOf = (s: SetLike): SetEntry[] =>
@@ -9,7 +9,18 @@ export const setsOf = (s: SetLike): SetEntry[] =>
 
 export const volumeOf = (s: SetLike) => (s.category === "cardio" ? 0 : setsOf(s).reduce((m, x) => m + x.weight * x.reps, 0));
 
-export const cardioMinutes = (s: SetLike) => s.reps * Math.max(1, s.sets);
+export const cardioWorkSec = (s: { reps: number; workSec?: number }) => s.reps * 60 + (s.workSec ?? 0);
+export const cardioRestSec = (s: { rest?: number; restSec?: number }) => (s.rest ?? 0) * 60 + (s.restSec ?? 0);
+export const cardioSeconds = (s: SetLike) => cardioWorkSec(s) * Math.max(1, s.sets);
+
+/** "12分30秒", "45秒" or "10分". */
+export function formatMinSec(total: number) {
+  const sec = Math.round(total);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (!s) return `${m}分`;
+  return m ? `${m}分${s}秒` : `${s}秒`;
+}
 
 export const unitLabel = (unit: Unit) => (unit === "kg" ? "kg" : "lbs");
 
@@ -17,9 +28,10 @@ export const formatWeight = (kg: number, unit: Unit) => (kg === 0 ? "自重" : `
 
 export function formatSet(s: SetLike, unit: Unit) {
   if (s.category === "cardio") {
-    const rest = s.rest ?? 0;
-    if (s.sets <= 1 && rest === 0) return `${s.reps}分`;
-    return `${s.reps}分 × ${s.sets}${rest ? `（休憩${rest}分）` : ""}`;
+    const work = formatMinSec(cardioWorkSec(s));
+    const rest = cardioRestSec(s);
+    if (s.sets <= 1 && rest === 0) return work;
+    return `${work} × ${s.sets}${rest ? `（休憩${formatMinSec(rest)}）` : ""}`;
   }
   const list = setsOf(s);
   const uniform = list.every((x) => x.weight === list[0].weight && x.reps === list[0].reps);
@@ -64,7 +76,7 @@ export type Summary = {
   entries: number;
   sets: number;
   volumeKg: number;
-  cardioMin: number;
+  cardioSec: number;
   byCategory: { id: CategoryId; label: string; color: string; count: number }[];
 };
 
@@ -73,10 +85,10 @@ export function summarize(logs: ResolvedLog[]): Summary {
   const counts = new Map<CategoryId, number>();
   let sets = 0;
   let volumeKg = 0;
-  let cardioMin = 0;
+  let cardioSec = 0;
   for (const l of logs) {
     counts.set(l.category, (counts.get(l.category) ?? 0) + 1);
-    if (l.category === "cardio") cardioMin += cardioMinutes(l);
+    if (l.category === "cardio") cardioSec += cardioSeconds(l);
     else {
       sets += setsOf(l).length;
       volumeKg += volumeOf(l);
@@ -87,7 +99,7 @@ export function summarize(logs: ResolvedLog[]): Summary {
     entries: logs.length,
     sets,
     volumeKg,
-    cardioMin,
+    cardioSec,
     byCategory: CATEGORIES.filter((c) => counts.has(c.id)).map((c) => ({ ...c, count: counts.get(c.id)! })),
   };
 }
@@ -101,7 +113,7 @@ export const inMonth = (logs: ResolvedLog[], year: number, month: number) =>
 export function dayShareText(dayMs: number, logs: ResolvedLog[], unit: Unit) {
   const s = summarize(logs);
   const lines = [`${formatDate(dayMs)} のトレーニング`, ...logs.map((l) => `・${l.name}（${category(l.category).label}）${formatSet(l, unit)}`)];
-  const totals = [s.sets ? `${s.sets}セット` : "", s.volumeKg ? formatVolume(s.volumeKg, unit) : "", s.cardioMin ? `有酸素 ${s.cardioMin}分` : ""];
+  const totals = [s.sets ? `${s.sets}セット` : "", s.volumeKg ? formatVolume(s.volumeKg, unit) : "", s.cardioSec ? `有酸素 ${formatMinSec(s.cardioSec)}` : ""];
   lines.push(`合計 ${totals.filter(Boolean).join(" / ")}`, "#REPS");
   return lines.join("\n");
 }
@@ -112,7 +124,7 @@ export function monthShareText(year: number, month: number, s: Summary, unit: Un
     `トレーニング日数 ${s.days}日`,
     `総セット ${s.sets}`,
     `総ボリューム ${formatVolume(s.volumeKg, unit)}`,
-    `有酸素 ${s.cardioMin}分`,
+    `有酸素 ${formatMinSec(s.cardioSec)}`,
     s.byCategory.map((c) => `${c.label} ${c.count}`).join("・"),
     "#REPS",
   ]

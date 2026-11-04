@@ -56,7 +56,7 @@ export function Sheet({
   children: ReactNode;
   testId?: string;
   /** Stack over full-screen views such as the calendar. */
-  above?: boolean;
+  above?: boolean | "top";
   /** Pinned below the scrolling content on its own band, so nothing scrolls underneath it. */
   footer?: ReactNode;
   /** Size to the content instead of the fixed height; only for sheets whose content never changes. */
@@ -70,7 +70,7 @@ export function Sheet({
         <>
           <motion.div
             key="scrim"
-            className={`fixed inset-0 bg-slate-900/25 backdrop-blur-[3px] ${above ? "z-[64]" : "z-40"}`}
+            className={`fixed inset-0 bg-slate-900/25 backdrop-blur-[3px] ${above === "top" ? "z-[71]" : above ? "z-[64]" : "z-40"}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -82,7 +82,7 @@ export function Sheet({
             role="dialog"
             aria-modal="true"
             data-testid={testId}
-            className={`glass-strong fixed inset-x-0 bottom-0 ${above ? "z-[65]" : "z-50"} mx-auto flex ${fit ? "max-h-[88dvh]" : "h-[88dvh]"} max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]`}
+            className={`glass-strong fixed inset-x-0 bottom-0 ${above === "top" ? "z-[72]" : above ? "z-[65]" : "z-50"} mx-auto flex ${fit ? "max-h-[88dvh]" : "h-[88dvh]"} max-w-md flex-col rounded-t-[32px] pb-[max(env(safe-area-inset-bottom),16px)]`}
             // A fixed height, so switching a type or tab inside the sheet never makes it jump; only the keyboard shrinks it.
             style={keyboard ? { bottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 24px)`, height: fit ? undefined : `calc(100dvh - ${keyboard}px - 24px)` } : undefined}
             data-fixed={fit ? undefined : true}
@@ -305,23 +305,31 @@ export function WeightStepper({ value, onChange }: { value: number; onChange: (k
 
 /** Work minutes, rest minutes (0 = no rest) and rounds; these drive the interval timer. */
 export function CardioFields({ value, onChange }: { value: CardioForm; onChange: (v: CardioForm) => void }) {
+  const workSec = value.workSec ?? 0;
   return (
     <div className="space-y-3" data-testid="cardio-fields">
+      {/* The work time can be seconds only, but never zero in total. */}
       <div className="grid grid-cols-2 gap-3">
-        <Stepper label="運動" unit="分" min={1} max={600} value={value.reps} onChange={(reps) => onChange({ ...value, reps })} testId="minutes" />
+        <Stepper label="運動" unit="分" min={workSec > 0 ? 0 : 1} max={600} value={value.reps} onChange={(reps) => onChange({ ...value, reps })} testId="minutes" />
+        <Stepper label="運動の秒" unit="秒" step={5} min={value.reps > 0 ? 0 : 1} max={59} value={workSec} onChange={(s) => onChange({ ...value, workSec: s })} testId="seconds" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <Stepper label="休憩" unit="分" min={0} max={120} value={value.rest} onChange={(rest) => onChange({ ...value, rest })} testId="rest-minutes" />
+        <Stepper label="休憩の秒" unit="秒" step={5} min={0} max={59} value={value.restSec ?? 0} onChange={(s) => onChange({ ...value, restSec: s })} testId="rest-seconds" />
       </div>
       <Stepper label="セット" min={1} max={50} value={value.sets} onChange={(sets) => onChange({ ...value, sets })} testId="cardio-sets" />
     </div>
   );
 }
 
+type CardioExtra = { rest?: number; workSec?: number; restSec?: number };
+
 /** Menu defaults: weight / reps / sets, or the cardio timer settings. */
-export function SetFields({ category, form, onChange }: { category: CategoryId; form: SetForm & { rest?: number }; onChange: (f: SetForm & { rest?: number }) => void }) {
+export function SetFields({ category, form, onChange }: { category: CategoryId; form: SetForm & CardioExtra; onChange: (f: SetForm & CardioExtra) => void }) {
   if (category === "cardio") {
     return (
       <CardioFields
-        value={{ reps: form.reps, rest: form.rest ?? 0, sets: form.sets }}
+        value={{ reps: form.reps, rest: form.rest ?? 0, sets: form.sets, workSec: form.workSec, restSec: form.restSec }}
         onChange={(v) => onChange({ weight: 0, ...v })}
       />
     );

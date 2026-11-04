@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { menuDayOf, normalizeData, useStore } from "../../src/lib/store";
+import { exerciseHistories, logsOfExercise } from "../../src/lib/analytics";
 
 const bench = { name: "ベンチプレス", category: "chest" as const, weight: 60, reps: 10, sets: 3 };
 
@@ -53,6 +54,45 @@ describe("daily menu list", () => {
     expect(data.exercises[0]).toMatchObject({ detail: [{ weight: 60, reps: 10 }, { weight: 70, reps: 8 }], memo: "メモ" });
     expect(data.archive?.[0]).toMatchObject({ id: "b", memo: "深く" });
     expect(data.menuDay).toBe("2026-11-02");
+  });
+});
+
+describe("exercise history", () => {
+  beforeEach(() => {
+    useStore.setState({ exercises: [], logs: [], archive: [], deletedLogs: [], menuDay: undefined, selectedExerciseId: null });
+  });
+
+  it("keeps a menu's records when the menu is deleted, and adding it again finds them", () => {
+    const s = useStore.getState();
+    const id = s.addExercise(bench);
+    s.addLog({ exerciseId: id, weight: 70, reps: 8, sets: 3 });
+    s.removeExercise(id);
+    expect(useStore.getState().logs).toHaveLength(1);
+    expect(useStore.getState().deletedLogs).toEqual([]);
+
+    useStore.getState().addExercises([bench]);
+    expect(useStore.getState().exercises[0].id).toBe(id);
+  });
+
+  it("finds records by name and body part when the id is new, without mixing other exercises", () => {
+    const logs = [
+      { id: "1", exerciseId: "old", at: 1, weight: 60, reps: 8, sets: 1, name: "ベンチプレス", category: "chest" as const },
+      { id: "2", exerciseId: "other", at: 2, weight: 80, reps: 8, sets: 1, name: "スクワット", category: "legs" as const },
+    ];
+    expect(logsOfExercise(logs, { id: "new", name: "ベンチプレス", category: "chest" }).map((l) => l.id)).toEqual(["1"]);
+  });
+
+  it("groups all records per exercise, newest first, for menus no longer in the list", () => {
+    const resolved = [
+      { id: "1", exerciseId: "a", at: 1, weight: 60, reps: 8, sets: 1, name: "ベンチプレス", category: "chest" as const },
+      { id: "2", exerciseId: "b", at: 3, weight: 62, reps: 8, sets: 1, name: "ベンチプレス", category: "chest" as const },
+      { id: "3", exerciseId: "c", at: 2, weight: 80, reps: 8, sets: 1, name: "スクワット", category: "legs" as const },
+    ];
+    const groups = exerciseHistories(resolved);
+    expect(groups.map((g) => [g.name, g.logs.map((l) => l.id)])).toEqual([
+      ["ベンチプレス", ["2", "1"]],
+      ["スクワット", ["3"]],
+    ]);
   });
 });
 

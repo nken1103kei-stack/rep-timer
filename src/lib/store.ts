@@ -33,11 +33,11 @@ const sameMenu = (a: { category: CategoryId; name: string }, b: { category: Cate
   a.category === b.category && a.name === b.name;
 
 function normalizeExercise(e: Exercise): Exercise {
-  const { id, name, weight, reps, sets, rest, detail, memo } = e;
+  const { id, name, weight, reps, sets, rest, workSec, restSec, detail, memo } = e;
   const category: CategoryId = isCategoryId(e.category) ? e.category : guessCategory(name);
   const extra = { ...(detail?.length ? { detail } : {}), ...(memo ? { memo } : {}) };
   return category === "cardio"
-    ? { id, name, category, weight, reps, sets, rest: rest ?? 0, ...extra }
+    ? { id, name, category, weight, reps, sets, rest: rest ?? 0, ...(workSec ? { workSec } : {}), ...(restSec ? { restSec } : {}), ...extra }
     : { id, name, category, weight, reps, sets, ...extra };
 }
 
@@ -68,7 +68,6 @@ type State = AppData & {
   updateExercise: (id: string, patch: Partial<Exercise>) => void;
   removeExercise: (id: string) => { exercise: Exercise; index: number } | null;
   restoreExercise: (exercise: Exercise, index: number) => void;
-  purgeLogs: (exerciseId: string) => void;
   reorderExercises: (exercises: Exercise[]) => void;
   /** Records today's sets; the menu's defaults follow the latest record. */
   addLog: (log: Omit<LogEntry, "id" | "at" | "name" | "category">) => void;
@@ -127,8 +126,10 @@ export const useStore = create<State>()(
           const index = get().exercises.findIndex((e) => e.id === id);
           if (index < 0) return null;
           const exercise = get().exercises[index];
+          // Only the menu goes away: its records stay, and adding it again brings its plan and memo back.
           set((s) => ({
             exercises: s.exercises.filter((e) => e.id !== id),
+            archive: [exercise, ...(s.archive ?? []).filter((a) => !sameMenu(a, exercise))].slice(0, ARCHIVE_MAX),
             selectedExerciseId: s.selectedExerciseId === id ? null : s.selectedExerciseId,
             ...touched(),
           }));
@@ -138,16 +139,8 @@ export const useStore = create<State>()(
           set((s) => {
             const exercises = [...s.exercises];
             exercises.splice(Math.min(index, exercises.length), 0, exercise);
-            return { exercises, ...touched() };
+            return { exercises, archive: (s.archive ?? []).filter((a) => a.id !== exercise.id), ...touched() };
           }),
-        purgeLogs: (exerciseId) => {
-          if (get().exercises.some((e) => e.id === exerciseId)) return;
-          set((s) => ({
-            logs: s.logs.filter((l) => l.exerciseId !== exerciseId),
-            deletedLogs: [...(s.deletedLogs ?? []), ...s.logs.filter((l) => l.exerciseId === exerciseId).map((l) => l.id)],
-            ...touched(),
-          }));
-        },
         reorderExercises: (exercises) => set({ exercises, ...touched() }),
         addLog: (log) =>
           set((s) => {
@@ -157,7 +150,7 @@ export const useStore = create<State>()(
               // The latest record becomes the menu's default for next time.
               exercises: s.exercises.map((e) =>
                 e.id === log.exerciseId
-                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, detail: log.detail, ...(e.category === "cardio" ? { rest: log.rest ?? 0 } : {}) }
+                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, detail: log.detail, ...(e.category === "cardio" ? { rest: log.rest ?? 0, workSec: log.workSec, restSec: log.restSec } : {}) }
                   : e,
               ),
               ...touched(),

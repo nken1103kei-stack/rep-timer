@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { resumeLive, stopLive, updateLive, type LiveStatus } from "./live";
 
 /** What a running timer says outside the app: the tab title, and a notification while the app is in the background. */
-export type BackgroundStatus = { title: string; body: string };
+export type BackgroundStatus = { title: string; body: string; /** Same value while nothing but the time changes. */ phase?: string; live?: Omit<LiveStatus, "title"> };
 
 const TAG = "reps-timer";
 const BASE_TITLE = "REPS";
@@ -16,6 +17,9 @@ export function minSec(ms: number) {
 
 /** Clock time a countdown ends at, e.g. "10:45". Stays right even when the browser throttles a hidden page. */
 export const endClock = (endAt: number) => new Date(endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+
+/** iPhone shows every notification as a new banner, so there it only follows the phase; its text already says when it ends. */
+const bannersEachUpdate = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 async function notify(status: BackgroundStatus) {
   if (!notificationsSupported() || Notification.permission !== "granted") return;
@@ -41,7 +45,8 @@ async function clearNotification() {
 
 /**
  * While `describe` is set, keeps the tab title on the remaining time and, when the app is hidden,
- * a silent notification with the time left and the clock time it ends. `describe` is read fresh each tick.
+ * a silent notification with the time left and the clock time it ends, and feeds the live status (see live.ts).
+ * `describe` is read fresh each tick.
  */
 export function useBackgroundStatus(describe: ((now: number) => BackgroundStatus) | null) {
   const ref = useRef(describe);
@@ -50,14 +55,22 @@ export function useBackgroundStatus(describe: ((now: number) => BackgroundStatus
 
   useEffect(() => {
     if (!active) return;
+    let notified = "";
     const tick = () => {
       const d = ref.current?.(Date.now());
       if (!d) return;
       document.title = `${d.title} · ${BASE_TITLE}`;
-      if (document.visibilityState === "hidden") void notify(d);
+      if (d.live) updateLive({ title: d.title, ...d.live });
+      if (document.visibilityState !== "hidden" || (bannersEachUpdate() && notified === (d.phase ?? "status"))) return;
+      notified = d.phase ?? "status";
+      void notify(d);
     };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void clearNotification();
+      if (document.visibilityState === "visible") {
+        notified = "";
+        resumeLive();
+        void clearNotification();
+      }
       tick();
     };
     tick();
@@ -67,6 +80,7 @@ export function useBackgroundStatus(describe: ((now: number) => BackgroundStatus
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVisibility);
       document.title = BASE_TITLE;
+      stopLive();
       void clearNotification();
     };
   }, [active]);

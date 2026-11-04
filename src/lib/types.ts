@@ -19,6 +19,9 @@ export type Exercise = {
   reps: number;
   sets: number;
   rest?: number;
+  /** Cardio: seconds on top of the `reps` and `rest` minutes (0-59). */
+  workSec?: number;
+  restSec?: number;
   /** Planned weight and reps for each set; `weight`/`reps` mirror the first set. */
   detail?: SetEntry[];
   /** A one-line note shown on the menu card, e.g. "シート高さ4・肩甲骨を寄せる". */
@@ -35,6 +38,9 @@ export type LogEntry = {
   /** Per-set weight and reps for strength work; `weight`/`reps` mirror the first set. */
   detail?: SetEntry[];
   rest?: number;
+  /** Cardio: seconds on top of the `reps` and `rest` minutes (0-59). */
+  workSec?: number;
+  restSec?: number;
   /** Tempo timer used for this record (Pro), e.g. [3, 1, 2, 0]. */
   tempo?: Tempo;
   /** Snapshot so the calendar still reads correctly after a rename or delete. */

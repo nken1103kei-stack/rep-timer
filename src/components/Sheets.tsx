@@ -4,7 +4,7 @@ import { Check, Crown, Download, Lock, LogOut, Pencil, StickyNote, Trash2, Uploa
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
 import { exportCsv, importCsv } from "../lib/csv";
 import { CATEGORIES, DEFAULT_TEMPLATE, type CategoryId } from "../lib/catalog";
-import { cardioMinutes, formatDate, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
+import { cardioSeconds, formatDate, formatMinSec, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
 import { initialRecord, SET_TYPE, toLog, type RecordForm } from "../lib/record";
 import { signInWithGoogle, signOut, usePro, useSession } from "../lib/sync";
 import { buildSegments, formatDuration, formatTempo, totalMs, tutOf, type Tempo, type TimerKind } from "../lib/timer";
@@ -14,7 +14,7 @@ import { CardioFields, CategoryBadge, NumberInput, PrimaryButton, revealField, S
 import { openProSheet, ProBadge, ProLock, useProGate } from "./Pro";
 import { newRest, RestBanner, type RestRun } from "./RestTimer";
 import { E1rmChart } from "./Charts";
-import { e1rmSeries } from "../lib/analytics";
+import { e1rmSeries, logsOfExercise, type ExerciseHistory } from "../lib/analytics";
 import { coachFirst } from "../lib/coach";
 import type { ProFeature } from "../lib/proSheet";
 
@@ -35,7 +35,7 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
   const setCategory = (next: CategoryId) => {
     // Switching into or out of cardio swaps between minutes and weight/reps/sets.
     const crossing = (next === "cardio") !== (form.category === "cardio");
-    setForm({ ...form, ...(crossing ? { ...DEFAULT_TEMPLATE(next), detail: undefined } : {}), name: form.name, category: next });
+    setForm({ ...form, ...(crossing ? { ...DEFAULT_TEMPLATE(next), detail: undefined, workSec: undefined, restSec: undefined } : {}), name: form.name, category: next });
   };
 
   const save = () => {
@@ -124,13 +124,13 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
   const gate = useProGate();
 
   useEffect(() => {
-    if (exercise) setForm(initialRecord(exercise, logs.find((l) => l.exerciseId === exercise.id)));
+    if (exercise) setForm(initialRecord(exercise, logsOfExercise(logs, exercise)[0]));
     setSaved(false);
     setRest(null);
     // Only reset when a different menu is opened, not after each record.
   }, [id]);
 
-  const history = logs.filter((l) => l.exerciseId === id);
+  const history = exercise ? logsOfExercise(logs, exercise) : [];
   const cardio = exercise?.category === "cardio";
   const typed = history.map((l) => ({ ...l, category: exercise?.category ?? "other" }) as const);
   const best = typed.reduce((m, l) => Math.max(m, ...setsOf(l).map((x) => x.weight)), 0);
@@ -175,13 +175,13 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
           </AnimatePresence>
           <div className="grid grid-cols-3 gap-2">
             {cardio ? (
-              <Stat label="最長" value={history.length ? `${Math.max(...typed.map(cardioMinutes))}分` : "–"} />
+              <Stat label="最長" value={history.length ? formatMinSec(Math.max(...typed.map(cardioSeconds))) : "–"} />
             ) : (
               <Stat label="ベスト" value={best ? formatWeight(best, unit) : "–"} />
             )}
             <Stat label="記録" value={`${history.length}`} />
             {cardio ? (
-              <Stat label="合計時間" value={history.length ? `${typed.reduce((m, l) => m + cardioMinutes(l), 0)}分` : "–"} />
+              <Stat label="合計時間" value={history.length ? formatMinSec(typed.reduce((m, l) => m + cardioSeconds(l), 0)) : "–"} />
             ) : (
               <Stat label="総ボリューム" value={volume ? formatVolume(volume, unit) : "–"} />
             )}
@@ -189,7 +189,7 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
           <MemoField value={exercise.memo ?? ""} onChange={(memo) => updateExercise(exercise.id, { memo: memo || undefined })} />
           {!cardio && (
             <ProLock label="推定1RMグラフは Pro で使えます" testId="e1rm-lock" feature="e1rm">
-              <E1rmChart points={e1rmSeries(logs, exercise.id, exercise.category)} unit={unit} />
+              <E1rmChart points={e1rmSeries(history, exercise.category)} unit={unit} />
             </ProLock>
           )}
           {cardio ? (
@@ -261,6 +261,57 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
   );
 }
 
+/** One exercise's whole history and 1RM graph, also for exercises no longer in today's list. */
+export function ExerciseHistorySheet({ history, onClose }: { history: ExerciseHistory | null; onClose: () => void }) {
+  const unit = useStore((s) => s.unit);
+  const shown = useRef(history);
+  if (history) shown.current = history;
+  const h = shown.current;
+  const cardio = h?.category === "cardio";
+  const best = h ? h.logs.reduce((m, l) => Math.max(m, ...setsOf(l).map((x) => x.weight)), 0) : 0;
+  return (
+    <Sheet
+      open={!!history}
+      onClose={onClose}
+      above
+      testId="history-sheet"
+      title={
+        h && (
+          <div className="flex items-center gap-2">
+            <CategoryBadge id={h.category} />
+            <span className="flex-1 truncate">{h.name}</span>
+          </div>
+        )
+      }
+    >
+      {h && (
+        <div className="space-y-3 pt-1 pb-2">
+          <div className="grid grid-cols-2 gap-2">
+            {cardio ? (
+              <Stat label="最長" value={formatMinSec(Math.max(...h.logs.map(cardioSeconds)))} />
+            ) : (
+              <Stat label="ベスト" value={best ? formatWeight(best, unit) : "–"} />
+            )}
+            <Stat label="記録" value={`${h.logs.length}`} />
+          </div>
+          {!cardio && (
+            <ProLock label="推定1RMグラフは Pro で使えます" testId="e1rm-lock" feature="e1rm">
+              <E1rmChart points={e1rmSeries(h.logs, h.category)} unit={unit} />
+            </ProLock>
+          )}
+          <ul className="space-y-2" data-testid="log-history">
+            <AnimatePresence initial={false}>
+              {h.logs.map((log) => (
+                <LogRow key={log.id} log={log} text={formatSet(log, unit) + (log.tempo ? ` · TUT${tutOf(log.tempo, log.reps)}秒` : "")} />
+              ))}
+            </AnimatePresence>
+          </ul>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 export const MEMO_MAX = 60;
 
 /** One-line note per menu (form cues, machine settings). It shows on the menu card. */
@@ -287,7 +338,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="glass rounded-2xl px-3 py-2">
       <div className="text-[10px] font-bold tracking-wider text-mute">{label}</div>
-      <div className="font-display text-2xl font-extrabold italic">{value}</div>
+      <div className={`font-display font-extrabold whitespace-nowrap italic ${value.length > 6 ? "text-lg leading-8" : "text-2xl"}`}>{value}</div>
     </div>
   );
 }

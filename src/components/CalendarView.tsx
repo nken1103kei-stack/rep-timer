@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { AdSlot, ProBadge, ProLock } from "./Pro";
 import { BodyHeatmap } from "./Charts";
-import { sessionsByPart } from "../lib/analytics";
+import { createPortal } from "react-dom";
+import { exerciseHistories, sessionsByPart } from "../lib/analytics";
+import { ExerciseHistorySheet } from "./Sheets";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight, Share2, X } from "lucide-react";
 import { useStore } from "../lib/store";
@@ -10,6 +12,7 @@ import {
   dayKey,
   dayShareText,
   formatDate,
+  formatMinSec,
   formatSet,
   formatVolume,
   groupByDay,
@@ -34,7 +37,10 @@ export function CalendarView({ onClose, onShared }: { onClose: () => void; onSha
   const [dir, setDir] = useState(1);
   const [selected, setSelected] = useState(dayKey(today.getTime()));
 
-  const logs = useMemo(() => rawLogs.map((l) => resolveLog(l, exercises)), [rawLogs, exercises]);
+  const archive = useStore((s) => s.archive);
+  const logs = useMemo(() => rawLogs.map((l) => resolveLog(l, [...exercises, ...(archive ?? [])])), [rawLogs, exercises, archive]);
+  const histories = useMemo(() => exerciseHistories(logs), [logs]);
+  const [historyKey, setHistoryKey] = useState<string | null>(null);
   const byDay = useMemo(() => groupByDay(logs), [logs]);
   const monthLogs = inMonth(logs, cursor.y, cursor.m);
   const summary = summarize(monthLogs);
@@ -105,7 +111,7 @@ export function CalendarView({ onClose, onShared }: { onClose: () => void; onSha
               <SummaryStat label="DAYS" value={summary.days} testId="sum-days" />
               <SummaryStat label="SETS" value={summary.sets} testId="sum-sets" />
               <SummaryStat label="VOLUME" value={summary.volumeKg ? formatVolume(summary.volumeKg, unit) : "0"} testId="sum-volume" />
-              <SummaryStat label="CARDIO" value={`${summary.cardioMin}分`} testId="sum-cardio" />
+              <SummaryStat label="CARDIO" value={formatMinSec(summary.cardioSec)} testId="sum-cardio" />
             </div>
             <motion.button
               type="button"
@@ -262,7 +268,46 @@ export function CalendarView({ onClose, onShared }: { onClose: () => void; onSha
             {dayLogs.length === 0 && <li className="py-8 text-center text-sm font-semibold text-mute">記録なし</li>}
           </ul>
         </section>
+
+        <section className="mt-4" data-testid="exercise-histories">
+          <div className="mb-2 text-sm font-extrabold">種目別の履歴</div>
+          <ul className="space-y-2">
+            {histories.map((h) => (
+              <li key={h.key}>
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => {
+                    haptic(8);
+                    setHistoryKey(h.key);
+                  }}
+                  data-testid="history-item"
+                  data-name={h.name}
+                  className="glass flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left"
+                >
+                  <span className="h-8 w-1.5 shrink-0 rounded-full" style={{ background: category(h.category).color }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate font-bold">{h.name}</span>
+                      <CategoryBadge id={h.category} size="xs" />
+                    </span>
+                    <span className="block text-xs font-semibold text-mute">
+                      {h.logs.length}回 · 前回 {formatDate(h.logs[0].at)}
+                    </span>
+                  </span>
+                  <ChevronRight size={18} className="shrink-0 text-mute" />
+                </motion.button>
+              </li>
+            ))}
+            {histories.length === 0 && <li className="py-8 text-center text-sm font-semibold text-mute">記録なし</li>}
+          </ul>
+        </section>
       </div>
+      {/* In the body: this view's transform would otherwise pin the sheet to the view rather than the screen. */}
+      {createPortal(
+        <ExerciseHistorySheet history={histories.find((h) => h.key === historyKey) ?? null} onClose={() => setHistoryKey(null)} />,
+        document.body,
+      )}
     </motion.div>
   );
 }

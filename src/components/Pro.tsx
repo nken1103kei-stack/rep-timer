@@ -118,6 +118,7 @@ export function ProSheet({ onLogin }: { onLogin: () => void }) {
     <Sheet
       open={open}
       onClose={close}
+      above="top"
       testId="pro-sheet"
       title={
         page ? (

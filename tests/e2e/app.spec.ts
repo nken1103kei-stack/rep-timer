@@ -842,3 +842,91 @@ test("sync merges records: a stale device's copy cannot wipe records made on ano
   await page.getByTestId("calendar-button").click();
   await expect(page.getByTestId("calendar")).toContainText("ベンチプレス");
 });
+
+test("deleting a menu keeps its records: history stays in the calendar and comes back when it is added again", async ({ page }) => {
+  await seedMenus(page);
+  await openMenu(page, "デッドリフト");
+  await page.getByTestId("log-save").click();
+  await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
+  await closeSheet(page);
+  await expect(page.getByTestId("log-sheet")).toBeHidden();
+  await swipe(page, card(page, "デッドリフト"), -240);
+  await expect(page.getByTestId("toast")).toContainText("デッドリフトを削除");
+  // The delete used to wipe the records once the undo toast was gone.
+  await expect(page.getByTestId("toast")).toBeHidden({ timeout: 8000 });
+
+  // Still there after a reload, and readable per exercise without the menu being in today's list.
+  await page.reload();
+  await page.getByTestId("calendar-button").click();
+  const item = page.locator('[data-testid=history-item][data-name="デッドリフト"]');
+  await expect(item).toContainText("1回");
+  await item.click();
+  const history = page.getByTestId("history-sheet");
+  await expect(history.getByTestId("log-row")).toHaveCount(1);
+  await expect(history.getByTestId("e1rm-lock")).toBeVisible();
+  await page.getByTestId("sheet-scrim").last().click({ position: { x: 20, y: 20 } });
+  await expect(history).toBeHidden();
+  await page.getByTestId("cal-close").click();
+
+  // Added again, the menu finds its history.
+  await page.getByTestId("menu-add").click();
+  const sheet = page.getByTestId("library-sheet");
+  await sheet.locator("[data-testid=lib-tab][data-cat=back]").click();
+  await sheet.locator('[data-testid=lib-item][data-name="デッドリフト"]').click();
+  await sheet.getByTestId("lib-submit").click();
+  await openMenu(page, "デッドリフト");
+  await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
+});
+
+test("cardio is set and recorded in minutes and seconds", async ({ page }) => {
+  await seedMenus(page);
+  await card(page, "ランニング").click();
+  const sheet = page.getByTestId("log-sheet");
+  await sheet.getByRole("textbox", { name: "運動", exact: true }).fill("12");
+  await sheet.getByRole("textbox", { name: "運動の秒", exact: true }).fill("30");
+  await sheet.getByRole("textbox", { name: "休憩の秒", exact: true }).fill("45");
+  await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("0");
+  await sheet.getByTestId("log-save").click();
+  await expect(sheet.getByTestId("log-row").first()).toContainText("12分30秒");
+  await expect(sheet.getByTestId("log-row").first()).toContainText("休憩45秒");
+  await closeSheet(page);
+  // The latest record becomes the timer's setting, and it survives a reload.
+  await page.reload();
+  await card(page, "ランニング").click();
+  await closeSheet(page);
+  await expect(summary(page)).toContainText("12:30");
+  await page.getByTestId("start-button").click();
+  await expect(page.getByTestId("timer-overlay")).toContainText("12分30秒 / 休憩45秒");
+});
+
+test("cardio shows the time left as live status for the lock screen and notification centre, and it can be turned off", async ({ page }) => {
+  const title = () => page.evaluate(() => navigator.mediaSession.metadata?.title ?? "");
+  await seedMenus(page);
+  await card(page, "ランニング").click();
+  await closeSheet(page);
+  await page.getByTestId("start-button").click();
+  const button = page.getByTestId("timer-notify");
+  await expect(button).toHaveAttribute("data-on", "true");
+  await expect.poll(title).toMatch(/残り \d+:\d{2}$/);
+  await expect.poll(() => page.evaluate(() => navigator.mediaSession.playbackState)).toBe("playing");
+  // Browsers send "pause" on their own as the audio starts; the timer must keep running through it.
+  await page.waitForTimeout(1500);
+  await expect(page.getByTestId("timer-end")).toHaveText(/に終了$/);
+  const first = await title();
+  await expect.poll(title).not.toBe(first);
+  expect(await page.evaluate(() => navigator.mediaSession.metadata?.artist)).toBe("ランニング");
+
+  // Off: the session ends, and the choice is remembered for the next timer.
+  await button.click();
+  await expect(button).toHaveAttribute("data-on", "false");
+  await expect.poll(title).toBe("");
+  await page.getByTestId("timer-close").click();
+  await page.getByTestId("start-button").click();
+  await expect(button).toHaveAttribute("data-on", "false");
+  await button.click();
+  await expect.poll(title).toMatch(/残り/);
+
+  // Closing the timer ends it.
+  await page.getByTestId("timer-close").click();
+  await expect.poll(title).toBe("");
+});

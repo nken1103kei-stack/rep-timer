@@ -48,7 +48,7 @@ describe("summary and sharing", () => {
 
   it("summarizes days, sets, volume and cardio minutes", () => {
     const s = summarize(resolved);
-    expect(s).toMatchObject({ days: 2, sets: 6, volumeKg: 60 * 10 * 3 + 80 * 8 * 3, cardioMin: 30 });
+    expect(s).toMatchObject({ days: 2, sets: 6, volumeKg: 60 * 10 * 3 + 80 * 8 * 3, cardioSec: 1800 });
     expect(s.byCategory.map((c) => [c.label, c.count])).toEqual([
       ["胸", 1],
       ["脚", 1],

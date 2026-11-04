@@ -19,6 +19,9 @@ export const presetLabel = (p: Preset) =>
         ? formatDuration(p.rest * 1000)
         : `${p.work}/${p.rest}`;
 
+/** Whole minutes stay a plain number; with seconds it reads 12:30. */
+const clockOf = (min: number, sec = 0) => (sec ? `${min}:${String(sec).padStart(2, "0")}` : min);
+
 export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onEditPreset: (id?: string) => void }) {
   const presets = useStore((s) => s.presets);
   const selectedPresetId = useStore((s) => s.selectedPresetId);
@@ -95,8 +98,8 @@ export function TimerPanel({ onStart, onEditPreset }: { onStart: () => void; onE
           >
             {cardio ? (
               <div className="flex items-end gap-3">
-                <Big value={cardio.reps} label="WORK 分" color="text-accent" />
-                <Big value={cardio.rest ?? 0} label="REST 分" color="text-rest" />
+                <Big value={clockOf(cardio.reps, cardio.workSec)} label={cardio.workSec ? "WORK 分:秒" : "WORK 分"} color="text-accent" />
+                <Big value={clockOf(cardio.rest ?? 0, cardio.restSec)} label={cardio.restSec ? "REST 分:秒" : "REST 分"} color="text-rest" />
                 <Big value={`×${timer.rounds}`} label="SETS" color="text-ink" />
               </div>
             ) : preset.kind === "superset" ? (

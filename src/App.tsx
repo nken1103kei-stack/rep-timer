@@ -5,6 +5,8 @@ import { useStore } from "./lib/store";
 import { bootstrap, refreshPlan, useSession } from "./lib/sync";
 import { unlockAudio } from "./lib/feedback";
 import { cardioTimer } from "./lib/record";
+import { livePreferred, startLive } from "./lib/live";
+import { notificationsSupported } from "./lib/background";
 import type { Exercise, Preset } from "./lib/types";
 import { Skeleton } from "./components/Skeleton";
 import { Header } from "./components/Header";
@@ -28,7 +30,7 @@ type SheetState =
   | { type: "account" }
   | null;
 
-type Toast = { id: number; text: string; undo?: () => void; expire?: () => void };
+type Toast = { id: number; text: string; undo?: () => void };
 
 const MIN_SKELETON_MS = 500;
 
@@ -77,13 +79,9 @@ export default function App() {
 
   const showToast = (t: Omit<Toast, "id">) => {
     clearTimeout(toastTimer.current);
-    toast?.expire?.();
     const next = { ...t, id: Date.now() };
     setToast(next);
-    toastTimer.current = setTimeout(() => {
-      next.expire?.();
-      setToast(null);
-    }, next.undo ? 4000 : 2200);
+    toastTimer.current = setTimeout(() => setToast(null), next.undo ? 4000 : 2200);
   };
 
   const deleteExercise = (id: string) => {
@@ -92,7 +90,6 @@ export default function App() {
     showToast({
       text: `${removed.exercise.name}を削除`,
       undo: () => useStore.getState().restoreExercise(removed.exercise, removed.index),
-      expire: () => useStore.getState().purgeLogs(removed.exercise.id),
     });
   };
 
@@ -105,6 +102,11 @@ export default function App() {
       exercise?.category === "cardio" ? cardioTimer(exercise) : (s.presets.find((p) => p.id === s.selectedPresetId) ?? s.presets[0]);
     // Superset and tempo timers stay saved after a plan ends, but running them needs Pro.
     if ("kind" in preset && preset.kind && preset.kind !== "interval" && !useSession.getState().plan.pro) return openProSheet(preset.kind as ProFeature);
+    // Audio can only start from this tap, so the live status on the lock screen starts here.
+    if (livePreferred(exercise?.category === "cardio")) {
+      startLive();
+      if (notificationsSupported() && Notification.permission === "default") void Notification.requestPermission();
+    }
     setRun({ preset, exercise });
   };
 

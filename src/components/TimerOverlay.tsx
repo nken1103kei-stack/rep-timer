@@ -8,6 +8,8 @@ import { beep, haptic, keepAwake } from "../lib/feedback";
 import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
 import { initialRecord, toLog } from "../lib/record";
 import { endClock, minSec, useBackgroundStatus, useNotificationPermission } from "../lib/background";
+import { liveRunning, liveSupported, setLivePreferred, setLiveToggle, startLive, stopLive } from "../lib/live";
+import { formatMinSec } from "../lib/stats";
 
 /** Plain Japanese names for the tab title and the background notification. */
 const PHASE_JA: Record<Phase, string> = {
@@ -116,9 +118,12 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
           const at = timerAt(segments, (paused ?? t) - startRef.current - pausedTotal.current);
           const round = at.rounds > 1 ? ` ${at.round}/${at.rounds}` : "";
           const name = exercise?.name ?? preset.name;
-          if (paused !== null) return { title: `一時停止中 ${minSec(at.remainingMs)}`, body: `${name}${round} · タップで戻る` };
+          const live = { name, durationMs: at.segmentMs, positionMs: at.segmentMs - at.remainingMs, paused: paused !== null };
+          if (paused !== null) return { title: `一時停止中 ${minSec(at.remainingMs)}`, body: `${name}${round} · タップで戻る`, phase: `paused-${at.index}`, live };
           const end = t + at.totalMs - at.elapsedMs;
           return {
+            phase: String(at.index),
+            live,
             title: `${PHASE_JA[at.phase]}${round} 残り ${minSec(at.remainingMs)}`,
             body: `${name} · ${PHASE_JA[at.phase]}は ${endClock(t + at.remainingMs)} まで · 全体 ${endClock(end)} に終了`,
           };
@@ -127,11 +132,31 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
 
   const togglePause = () => {
     haptic(12);
-    if (pausedAt === null) setPausedAt(Date.now());
+    const held = pausedRef.current;
+    if (held === null) setPausedAt(Date.now());
     else {
-      pausedTotal.current += Date.now() - pausedAt;
+      pausedTotal.current += Date.now() - held;
       setPausedAt(null);
     }
+  };
+
+  // The play and pause buttons on the lock screen control this timer.
+  const toggleRef = useRef(togglePause);
+  toggleRef.current = togglePause;
+  useEffect(() => setLiveToggle(() => toggleRef.current()), []);
+
+  // Started by the tap on スタート (cardio by default) or by this button, on the home screen too.
+  const [live, setLive] = useState(liveRunning);
+  const toggleLive = () => {
+    haptic(10);
+    setLivePreferred(!live);
+    if (live) stopLive();
+    else {
+      startLive();
+      setLiveToggle(() => toggleRef.current());
+      void request();
+    }
+    setLive(!live);
   };
 
   const skip = () => {
@@ -167,22 +192,22 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
           <div className="min-w-0">
             <div className="truncate text-sm font-bold">{exercise?.name ?? preset.name}</div>
             <div className="font-display text-xs font-semibold text-mute">
-              {exercise?.category === "cardio" ? `${preset.work / 60}分 / 休憩${preset.rest / 60}分 × ${preset.rounds}` : describeTimer(preset)}
+              {exercise?.category === "cardio" ? `${formatMinSec(preset.work)} / 休憩${formatMinSec(preset.rest)} × ${preset.rounds}` : describeTimer(preset)}
             </div>
           </div>
           <div className="flex shrink-0 gap-2">
-            {permission !== "unsupported" && permission !== "denied" && st.phase !== "done" && (
+            {(liveSupported() || (permission !== "unsupported" && permission !== "denied")) && st.phase !== "done" && (
               <motion.button
                 type="button"
                 whileTap={{ scale: 0.85 }}
-                onClick={() => void request()}
-                aria-label={permission === "granted" ? "バックグラウンド通知はオン" : "バックグラウンドでも残り時間を通知する"}
+                onClick={toggleLive}
+                aria-label={live ? "ホーム画面と通知センターへの表示をやめる" : "ホーム画面と通知センターにも残り時間を表示する"}
                 data-testid="timer-notify"
-                data-on={permission === "granted"}
-                className={`flex h-11 items-center gap-1 rounded-full px-3 text-xs font-bold ${permission === "granted" ? "bg-go/15 text-go" : "glass"}`}
+                data-on={live}
+                className={`flex h-11 items-center gap-1 rounded-full px-3 text-xs font-bold ${live ? "bg-go/15 text-go" : "glass"}`}
               >
-                {permission === "granted" ? <BellRing size={16} /> : <Bell size={16} />}
-                {permission === "granted" ? "通知オン" : "裏でも通知"}
+                {live ? <BellRing size={16} /> : <Bell size={16} />}
+                {live ? "裏でも表示中" : "裏でも表示"}
               </motion.button>
             )}
             <motion.button

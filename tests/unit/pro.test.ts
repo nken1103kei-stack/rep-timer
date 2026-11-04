@@ -60,9 +60,9 @@ describe("csv", () => {
     expect(csv.startsWith("﻿日時,種目,部位")).toBe(true);
     const rows = parseCsv(csv);
     expect(rows).toHaveLength(4);
-    expect(rows[1]).toEqual(["2026-10-01 10:00:00", "ベンチプレス", "胸", "1", "W", "40", "10", "", "", ""]);
+    expect(rows[1]).toEqual(["2026-10-01 10:00:00", "ベンチプレス", "胸", "1", "W", "40", "10", "", "", "", "", ""]);
     expect(rows[3][1]).toBe("ラン,ニング");
-    expect(rows[3].slice(7)).toEqual(["20", "1", "2"]);
+    expect(rows[3].slice(7)).toEqual(["20", "1", "2", "0", "0"]);
   });
 
   it("round-trips its own export, and importing twice adds nothing", () => {
@@ -120,7 +120,7 @@ describe("pro tools", () => {
   it("estimates 1RM and counts sets per body part", () => {
     expect(e1rm(100, 1)).toBe(100);
     expect(e1rm(60, 30)).toBe(120);
-    expect(e1rmSeries(logs, "b", "chest").map((p) => Math.round(p.value * 10) / 10)).toEqual([79.2]);
+    expect(e1rmSeries(logs.filter((l) => l.exerciseId === "b"), "chest").map((p) => Math.round(p.value * 10) / 10)).toEqual([79.2]);
   });
 
   it("counts each body part once per day for the heatmap, without cardio", () => {
