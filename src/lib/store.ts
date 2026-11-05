@@ -72,8 +72,10 @@ type State = AppData & {
   /** Records today's sets; the menu's defaults follow the latest record. */
   addLog: (log: Omit<LogEntry, "id" | "at" | "name" | "category">) => void;
   removeLog: (id: string) => void;
+  restoreLog: (log: LogEntry) => void;
   savePreset: (preset: Omit<Preset, "id"> & { id?: string }) => string;
   removePreset: (id: string) => void;
+  restorePreset: (preset: Preset) => void;
   addCustomTemplate: (category: CategoryId, name: string) => void;
   removeCustomTemplate: (id: string) => void;
   setUnit: (unit: Unit) => void;
@@ -159,6 +161,12 @@ export const useStore = create<State>()(
         // Remembered as deleted, so another device's copy cannot bring it back when the two are merged.
         removeLog: (id) =>
           set((s) => ({ logs: s.logs.filter((l) => l.id !== id), deletedLogs: [...(s.deletedLogs ?? []), id], ...touched() })),
+        restoreLog: (log) =>
+          set((s) => ({
+            logs: [...s.logs, log].sort((a, b) => b.at - a.at),
+            deletedLogs: (s.deletedLogs ?? []).filter((id) => id !== log.id),
+            ...touched(),
+          })),
         savePreset: ({ id, ...preset }) => {
           const presetId = id ?? uid();
           set((s) => ({
@@ -179,6 +187,7 @@ export const useStore = create<State>()(
               ...touched(),
             };
           }),
+        restorePreset: (preset) => set((s) => ({ presets: [...s.presets, preset], ...touched() })),
         addCustomTemplate: (category, name) =>
           set((s) =>
             s.customLibrary.some((t) => t.category === category && t.name === name)
@@ -245,5 +254,23 @@ export const pickData = (s: AppData): AppData => ({
   archive: s.archive,
   deletedLogs: s.deletedLogs,
 });
+
+/**
+ * The menus of the last training day before `today`, in the order they were done, ready to add again.
+ * The list starts empty every day, so this is the usual way to start a repeat session.
+ */
+export function lastSession(logs: LogEntry[], today: string) {
+  const newest = [...logs].sort((a, b) => b.at - a.at).find((l) => l.name && menuDayOf(l.at) !== today);
+  if (!newest) return null;
+  const day = menuDayOf(newest.at);
+  const seen = new Map<string, Omit<Exercise, "id">>();
+  for (const l of [...logs].sort((a, b) => a.at - b.at)) {
+    if (!l.name || menuDayOf(l.at) !== day) continue;
+    const category = l.category ?? guessCategory(l.name);
+    const { weight, reps, sets, detail, rest, workSec, restSec } = l;
+    seen.set(`${category}/${l.name}`, { name: l.name, category, weight, reps, sets, detail, rest, workSec, restSec });
+  }
+  return { at: newest.at, menus: [...seen.values()] };
+}
 
 export const lastLogFor = (logs: LogEntry[], exerciseId: string) => logs.find((l) => l.exerciseId === exerciseId);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { menuDayOf, normalizeData, useStore } from "../../src/lib/store";
+import { lastSession, menuDayOf, normalizeData, useStore } from "../../src/lib/store";
 import { exerciseHistories, logsOfExercise } from "../../src/lib/analytics";
 
 const bench = { name: "ベンチプレス", category: "chest" as const, weight: 60, reps: 10, sets: 3 };
@@ -54,6 +54,26 @@ describe("daily menu list", () => {
     expect(data.exercises[0]).toMatchObject({ detail: [{ weight: 60, reps: 10 }, { weight: 70, reps: 8 }], memo: "メモ" });
     expect(data.archive?.[0]).toMatchObject({ id: "b", memo: "深く" });
     expect(data.menuDay).toBe("2026-11-02");
+  });
+});
+
+describe("last session", () => {
+  const log = (id: string, name: string, at: Date) => ({ id, exerciseId: id, at: at.getTime(), weight: 60, reps: 8, sets: 3, name, category: "chest" as const });
+  it("takes the last training day before today, in the order done, one entry per exercise", () => {
+    const s = lastSession(
+      [
+        log("today", "今日の種目", new Date(2026, 10, 6, 10)),
+        log("b", "B", new Date(2026, 10, 4, 11)),
+        log("a", "A", new Date(2026, 10, 4, 10)),
+        log("a2", "A", new Date(2026, 10, 4, 12)),
+        log("old", "古い種目", new Date(2026, 10, 1, 10)),
+      ],
+      "2026-11-06",
+    );
+    expect(s?.menus.map((m) => m.name)).toEqual(["A", "B"]);
+  });
+  it("is empty without an earlier day", () => {
+    expect(lastSession([log("today", "今日", new Date(2026, 10, 6, 10))], "2026-11-06")).toBeNull();
   });
 });
 

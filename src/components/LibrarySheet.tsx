@@ -5,6 +5,7 @@ import { CATEGORIES, DEFAULT_TEMPLATE, LIBRARY, type CategoryId, type Template }
 import { useStore } from "../lib/store";
 import { formatSet } from "../lib/stats";
 import { haptic } from "../lib/feedback";
+import { showToast } from "../lib/toast";
 import { PrimaryButton, Sheet, spring } from "./ui";
 
 type Item = Template & { category: CategoryId; customId?: string };
@@ -186,6 +187,7 @@ export function LibrarySheet({ open, onClose }: { open: boolean; onClose: () => 
                     data-testid="lib-custom-remove"
                     onClick={() => {
                       removeCustomTemplate(item.customId!);
+                      showToast({ text: `${item.name}を候補から削除`, undo: () => useStore.getState().addCustomTemplate(item.category, item.name) });
                       setPicked((prev) => {
                         const next = new Map(prev);
                         next.delete(keyOf(item));

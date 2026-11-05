@@ -6,7 +6,9 @@ import { buildSegments, describeTimer, formatClock, formatDuration, isTempoPhase
 import type { Exercise, Preset } from "../lib/types";
 import { beep, haptic, keepAwake } from "../lib/feedback";
 import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
-import { initialRecord, toLog } from "../lib/record";
+import { initialRecord, recordFeedback, toLog } from "../lib/record";
+import { logsOfExercise } from "../lib/analytics";
+import { showToast } from "../lib/toast";
 import { endClock, minSec, useBackgroundStatus, useNotificationPermission } from "../lib/background";
 import { liveRunning, liveSupported, setLivePreferred, setLiveToggle, startLive, stopLive } from "../lib/live";
 import { formatMinSec } from "../lib/stats";
@@ -358,14 +360,16 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
 
 function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise | null; preset: Preset; totalMs: number; onClose: () => void }) {
   const addLog = useStore((s) => s.addLog);
-  const lastLog = useStore((s) => s.logs.find((l) => l.exerciseId === exercise?.id));
+  const logs = useStore((s) => s.logs);
+  const unit = useStore((s) => s.unit);
+  const history = exercise ? logsOfExercise(logs, exercise) : [];
   const cardio = exercise?.category === "cardio";
   // Interval rounds become sets; a cardio menu's own timer settings are the record.
   const tempo = preset.kind === "tempo" ? preset.tempo : undefined;
   const [form, setForm] = useState(() => {
     if (!exercise) return null;
     const timed = !cardio && (preset.work > 0 || !!tempo);
-    const record = initialRecord(exercise, lastLog, timed ? preset.rounds : undefined);
+    const record = initialRecord(exercise, history[0], timed ? preset.rounds : undefined);
     return tempo ? { ...record, sets: record.sets.map((x) => ({ ...x, reps: preset.reps ?? x.reps })) } : record;
   });
   return (
@@ -405,7 +409,12 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
             <PrimaryButton
               testId="record-save"
               onClick={() => {
-                if (form) addLog({ ...toLog(exercise, form), ...(tempo ? { tempo } : {}) });
+                if (form) {
+                  const draft = { ...toLog(exercise, form), ...(tempo ? { tempo } : {}) };
+                  const note = recordFeedback(history, draft, exercise.category, unit);
+                  addLog(draft);
+                  if (note) showToast({ text: note });
+                }
                 onClose();
               }}
             >

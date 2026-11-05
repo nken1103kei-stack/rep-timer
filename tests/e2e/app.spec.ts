@@ -449,7 +449,7 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor.getByTestId("cardio-fields")).toBeVisible();
-  await editor.getByRole("textbox", { name: "運動", exact: true }).fill("1");
+  await editor.getByRole("textbox", { name: "運動", exact: true }).fill("100");
   await editor.getByRole("textbox", { name: "休憩", exact: true }).fill("0");
   await editor.getByRole("textbox", { name: "セット", exact: true }).fill("2");
   await editor.getByTestId("menu-save").click();
@@ -481,7 +481,7 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   const done = page.getByTestId("timer-done");
   await expect(done.getByTestId("cardio-fields")).toBeVisible();
   await expect(done.getByTestId("set-rows")).toHaveCount(0);
-  await expect(done.getByRole("textbox", { name: "運動", exact: true })).toHaveValue("1");
+  await expect(done.getByRole("textbox", { name: "運動", exact: true })).toHaveValue("1:00");
   await page.getByTestId("record-save").click();
   await expect(overlay).toBeHidden();
 
@@ -489,7 +489,7 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   await openMenu(page, "ランニング");
   const sheet = page.getByTestId("log-sheet");
   await expect(sheet.getByTestId("log-row")).toContainText("1分 × 2");
-  await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("1");
+  await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("100");
   await sheet.getByTestId("log-save").click();
   await expect(sheet.getByTestId("log-row").first()).toContainText("1分 × 2（休憩1分）");
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
@@ -537,15 +537,29 @@ test("tapping a menu opens the log, records each set's weight and reps, and flic
   await expect(sheet.getByRole("textbox", { name: "1セット目の重量" })).toHaveValue("85");
   await expect(sheet.getByRole("textbox", { name: "3セット目の重量" })).toHaveValue("82.5");
 
+  // A swipe alone deletes nothing; the button does, and it can be undone.
   await swipe(page, sheet.getByTestId("log-row").first(), -220);
+  await expect(sheet.getByTestId("log-row")).toHaveCount(1);
+  await sheet.getByTestId("log-delete").click();
   await expect(sheet.getByTestId("log-row")).toHaveCount(0);
+  await page.getByTestId("toast-undo").click();
+  await expect(sheet.getByTestId("log-row")).toHaveCount(1);
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
   await expect(sheet).toBeHidden();
 });
 
-test("flick left deletes a menu and undo restores it", async ({ page }) => {
+test("a swipe only shows the delete button; deleting a menu can be undone", async ({ page }) => {
   await seedMenus(page);
+  const item = page.locator('[data-testid=menu-item][data-name="デッドリフト"]');
   await swipe(page, card(page, "デッドリフト"), -240);
+  await expect(page.getByTestId("menu-item")).toHaveCount(4);
+  await expect(page.getByTestId("toast")).toHaveCount(0);
+  // Tapping the row closes it again instead of opening the menu.
+  await card(page, "デッドリフト").click({ position: { x: 160, y: 20 } });
+  await expect(page.getByTestId("log-sheet")).toHaveCount(0);
+  await expect(item.getByTestId("menu-delete")).toBeDisabled();
+  await swipe(page, card(page, "デッドリフト"), -240);
+  await item.getByTestId("menu-delete").click();
   await expect(page.getByTestId("menu-item")).toHaveCount(3);
   await expect(page.getByTestId("toast")).toContainText("デッドリフトを削除");
   await page.getByTestId("toast-undo").click();
@@ -851,9 +865,10 @@ test("deleting a menu keeps its records: history stays in the calendar and comes
   await closeSheet(page);
   await expect(page.getByTestId("log-sheet")).toBeHidden();
   await swipe(page, card(page, "デッドリフト"), -240);
+  await page.locator('[data-testid=menu-item][data-name="デッドリフト"]').getByTestId("menu-delete").click();
   await expect(page.getByTestId("toast")).toContainText("デッドリフトを削除");
   // The delete used to wipe the records once the undo toast was gone.
-  await expect(page.getByTestId("toast")).toBeHidden({ timeout: 8000 });
+  await expect(page.getByTestId("toast")).toBeHidden({ timeout: 10000 });
 
   // Still there after a reload, and readable per exercise without the menu being in today's list.
   await page.reload();
@@ -882,10 +897,15 @@ test("cardio is set and recorded in minutes and seconds", async ({ page }) => {
   await seedMenus(page);
   await card(page, "ランニング").click();
   const sheet = page.getByTestId("log-sheet");
-  await sheet.getByRole("textbox", { name: "運動", exact: true }).fill("12");
-  await sheet.getByRole("textbox", { name: "運動の秒", exact: true }).fill("30");
-  await sheet.getByRole("textbox", { name: "休憩の秒", exact: true }).fill("45");
-  await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("0");
+  // One cell each: digits fill from the right, and ± moves the same time.
+  const work = sheet.getByRole("textbox", { name: "運動", exact: true });
+  await work.fill("1200");
+  await expect(work).toHaveValue("12:00");
+  await sheet.getByLabel("運動を増やす").click();
+  await expect(work).toHaveValue("12:30");
+  await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("45");
+  await expect(sheet.getByRole("textbox", { name: "休憩", exact: true })).toHaveValue("0:45");
+  await expect(sheet.getByTestId("cardio-fields").locator("input")).toHaveCount(3);
   await sheet.getByTestId("log-save").click();
   await expect(sheet.getByTestId("log-row").first()).toContainText("12分30秒");
   await expect(sheet.getByTestId("log-row").first()).toContainText("休憩45秒");
@@ -929,4 +949,44 @@ test("cardio shows the time left as live status for the lock screen and notifica
   // Closing the timer ends it.
   await page.getByTestId("timer-close").click();
   await expect.poll(title).toBe("");
+});
+
+test("a new day: last session's menus come back with one tap", async ({ page }) => {
+  await page.evaluate(() => {
+    const yesterday = Date.now() - 86400000;
+    const log = (id: string, name: string, category: string, weight: number, at: number) => ({ id, exerciseId: id, at, weight, reps: 8, sets: 3, name, category });
+    localStorage.setItem("rep-timer", JSON.stringify({ state: {
+      exercises: [],
+      logs: [log("b", "スクワット", "legs", 100, yesterday + 1000), log("a", "ベンチプレス", "chest", 70, yesterday), log("c", "カール", "arms", 10, yesterday - 86400000 * 3)],
+    }, version: 2 }));
+  });
+  await page.reload();
+  const button = page.getByTestId("add-last-session");
+  await expect(button).toContainText("2種目");
+  await button.click();
+  // In the order they were done, with last time's numbers; the button goes once the list has menus.
+  await expect(page.getByTestId("menu-item")).toHaveCount(2);
+  await expect(page.getByTestId("menu-item").first()).toHaveAttribute("data-name", "ベンチプレス");
+  await expect(card(page, "スクワット")).toContainText("100kg × 8 × 3");
+  await expect(button).toHaveCount(0);
+});
+
+test("recording: last time is on show, one tap adds to every set, and saving says how it compares", async ({ page }) => {
+  await page.evaluate(() => {
+    const exercises = [{ id: "m", name: "ベンチプレス", category: "chest", weight: 60, reps: 10, sets: 3 }];
+    const logs = [{ id: "l", exerciseId: "m", at: Date.now() - 86400000 * 2, weight: 60, reps: 10, sets: 3, name: "ベンチプレス", category: "chest" }];
+    localStorage.setItem("rep-timer", JSON.stringify({ state: { exercises, logs }, version: 2 }));
+  });
+  await page.reload();
+  await card(page, "ベンチプレス").click();
+  const sheet = page.getByTestId("log-sheet");
+  await expect(sheet.getByTestId("prev-record")).toContainText("60kg × 10 × 3");
+  await sheet.getByTestId("bump-weight").click();
+  for (const i of [1, 2, 3]) await expect(sheet.getByRole("textbox", { name: `${i}セット目の重量` })).toHaveValue("62.5");
+  await sheet.getByTestId("bump-reps").click();
+  await expect(sheet.getByRole("textbox", { name: "3セット目の回数" })).toHaveValue("11");
+  await sheet.getByTestId("log-save").click();
+  // 62.5 x 11 x 3 = 2062.5 against 60 x 10 x 3 = 1800.
+  await expect(page.getByTestId("toast")).toContainText("自己ベスト更新 62.5kg");
+  await expect(page.getByTestId("toast")).toContainText("+15%");
 });

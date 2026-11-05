@@ -3,12 +3,13 @@ import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
 import { Check, Crown, Download, Lock, LogOut, Pencil, StickyNote, Trash2, Upload } from "lucide-react";
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
 import { exportCsv, importCsv } from "../lib/csv";
-import { CATEGORIES, DEFAULT_TEMPLATE, type CategoryId } from "../lib/catalog";
+import { CATEGORIES, DEFAULT_TEMPLATE, fromUnit, type CategoryId } from "../lib/catalog";
 import { cardioSeconds, formatDate, formatMinSec, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
-import { initialRecord, SET_TYPE, toLog, type RecordForm } from "../lib/record";
+import { initialRecord, recordFeedback, SET_TYPE, toLog, type RecordForm } from "../lib/record";
+import { showToast } from "../lib/toast";
 import { signInWithGoogle, signOut, usePro, useSession } from "../lib/sync";
 import { buildSegments, formatDuration, formatTempo, totalMs, tutOf, type Tempo, type TimerKind } from "../lib/timer";
-import type { Exercise, LogEntry, Preset } from "../lib/types";
+import type { Exercise, LogEntry, Preset, SetEntry } from "../lib/types";
 import { haptic } from "../lib/feedback";
 import { CardioFields, CategoryBadge, NumberInput, PrimaryButton, revealField, SetFields, SetRows, Sheet, spring, Stepper } from "./ui";
 import { openProSheet, ProBadge, ProLock, useProGate } from "./Pro";
@@ -195,7 +196,9 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
           {cardio ? (
             <CardioFields value={form.cardio} onChange={(c) => setForm({ ...form, cardio: c })} />
           ) : (
-            <SetRows
+            <>
+              {history[0] && <PreviousRecord log={history[0]} text={formatSet({ ...history[0], category: exercise.category }, unit)} sets={form.sets} onChange={(sets) => setForm({ ...form, sets })} />}
+              <SetRows
               sets={form.sets}
               onChange={(sets) => setForm({ ...form, sets })}
               resting={rest?.next ? rest.next.index - 1 : rest ? form.sets.length - 1 : null}
@@ -210,13 +213,17 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
                   el,
                 )()
               }
-            />
+              />
+            </>
           )}
           <PrimaryButton
             testId="log-save"
             tone={saved ? "ink" : "accent"}
             onClick={() => {
-              addLog(toLog(exercise, form));
+              const draft = toLog(exercise, form);
+              const note = recordFeedback(history, draft, exercise.category, unit);
+              addLog(draft);
+              if (note) showToast({ text: note });
               setSaved(true);
               setTimeout(() => setSaved(false), 1200);
             }}
@@ -258,6 +265,47 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
         </div>
       )}
     </Sheet>
+  );
+}
+
+/** Last time's numbers next to today's, and one tap to add to every set: more weight or one more rep. */
+function PreviousRecord({ log, text, sets, onChange }: { log: LogEntry; text: string; sets: SetEntry[]; onChange: (s: SetEntry[]) => void }) {
+  const unit = useStore((s) => s.unit);
+  const step = unit === "kg" ? 2.5 : fromUnit(5, "lb");
+  const chip = "h-9 shrink-0 rounded-full bg-accent/10 px-3 font-display text-sm font-bold text-accent";
+  return (
+    <div className="glass flex items-center gap-2 rounded-2xl py-2 pr-2 pl-3" data-testid="prev-record">
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] font-bold tracking-wider text-mute">前回 {formatDate(log.at)}</div>
+        <div className="truncate font-display text-sm font-bold">{text}</div>
+      </div>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.9 }}
+        className={chip}
+        aria-label="全セットの重量を増やす"
+        data-testid="bump-weight"
+        onClick={() => {
+          haptic(8);
+          onChange(sets.map((s) => ({ ...s, weight: Math.round((s.weight + step) * 100) / 100 })));
+        }}
+      >
+        +{unit === "kg" ? "2.5kg" : "5lbs"}
+      </motion.button>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.9 }}
+        className={chip}
+        aria-label="全セットの回数を増やす"
+        data-testid="bump-reps"
+        onClick={() => {
+          haptic(8);
+          onChange(sets.map((s) => ({ ...s, reps: s.reps + 1 })));
+        }}
+      >
+        +1回
+      </motion.button>
+    </div>
   );
 }
 
@@ -343,9 +391,16 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Swiping opens the row and shows 削除; tapping that deletes, with an undo in the toast. */
+const LOG_REVEAL = 88;
+
 function LogRow({ log, text }: { log: LogEntry; text: string }) {
-  const removeLog = useStore((s) => s.removeLog);
   const x = useMotionValue(0);
+  const [revealed, setRevealed] = useState(false);
+  const reveal = (on: boolean) => {
+    setRevealed(on);
+    void animate(x, on ? -LOG_REVEAL : 0, spring);
+  };
   return (
     <motion.li
       layout
@@ -355,21 +410,31 @@ function LogRow({ log, text }: { log: LogEntry; text: string }) {
       className="relative"
       data-testid="log-row"
     >
-      <div className="absolute inset-0 flex items-center justify-end rounded-2xl bg-danger/10 px-4 text-danger">
-        <Trash2 size={18} />
+      <div className="absolute inset-y-0 right-0 flex items-center">
+        <button
+          type="button"
+          aria-label="この記録を削除"
+          data-testid="log-delete"
+          disabled={!revealed}
+          onClick={() => {
+            haptic([10, 30, 10]);
+            useStore.getState().removeLog(log.id);
+            showToast({ text: "記録を削除しました", undo: () => useStore.getState().restoreLog(log) });
+          }}
+          className="flex h-full w-20 flex-col items-center justify-center rounded-2xl bg-danger text-xs font-bold text-white"
+        >
+          <Trash2 size={18} /> 削除
+        </button>
       </div>
       <motion.div
         style={{ x, touchAction: "pan-y" }}
         drag="x"
         dragDirectionLock
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.9, right: 0 }}
-        onDragEnd={(_, info) => {
-          if (info.offset.x < -80) {
-            haptic([10, 30, 10]);
-            void animate(x, -400, { duration: 0.2 }).then(() => removeLog(log.id));
-          } else void animate(x, 0, spring);
-        }}
+        dragConstraints={{ left: -LOG_REVEAL, right: 0 }}
+        dragElastic={{ left: 0.2, right: 0 }}
+        dragMomentum={false}
+        onDragEnd={(_, info) => reveal(revealed ? info.offset.x < LOG_REVEAL / 2 : info.offset.x < -LOG_REVEAL / 2)}
+        onTap={() => revealed && reveal(false)}
         className="relative flex items-center justify-between rounded-2xl bg-white px-4 py-3"
       >
         <span className="text-sm font-semibold text-mute">{formatDate(log.at)}</span>
@@ -536,6 +601,7 @@ export function PresetEditor({ open, id, onClose }: { open: boolean; id: string 
               testId="preset-delete"
               onClick={() => {
                 removePreset(existing.id);
+                showToast({ text: `${existing.name}を削除`, undo: () => useStore.getState().restorePreset(existing) });
                 onClose();
               }}
             >

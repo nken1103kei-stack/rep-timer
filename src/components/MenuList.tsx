@@ -7,17 +7,18 @@ import {
   useMotionValue,
   useTransform,
 } from "motion/react";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Check,
   GripVertical,
   NotebookPen,
   Plus,
+  RotateCcw,
   Share2,
   StickyNote,
   Trash2,
 } from "lucide-react";
-import { lastLogFor, useStore } from "../lib/store";
+import { lastLogFor, lastSession, menuDayOf, useStore } from "../lib/store";
 import type { Exercise } from "../lib/types";
 import { haptic } from "../lib/feedback";
 import { CategoryBadge, spring } from "./ui";
@@ -33,7 +34,8 @@ import {
   type ShareResult,
 } from "../lib/stats";
 
-const SWIPE = 96;
+/** How far a swipe opens the row: it only shows the delete button, so a stray swipe deletes nothing. */
+const REVEAL = 96;
 
 export function MenuList({
   onAdd,
@@ -51,6 +53,9 @@ export function MenuList({
   const logs = useStore((s) => s.logs);
   const unit = useStore((s) => s.unit);
   // Today's records, newest first like the calendar.
+  const today = menuDayOf(Date.now());
+  const previous = useMemo(() => (exercises.length === 0 ? lastSession(logs, today) : null), [exercises.length, logs, today]);
+  const addExercises = useStore((s) => s.addExercises);
   const todayLogs = useMemo(() => {
     const today = dayKey(Date.now());
     return logs
@@ -139,6 +144,33 @@ export function MenuList({
         </AnimatePresence>
       </Reorder.Group>
 
+      {previous && (
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            haptic(12);
+            addExercises(previous.menus);
+          }}
+          data-testid="add-last-session"
+          className="mt-3 flex w-full items-center gap-3 rounded-[22px] bg-ink px-4 py-3.5 text-left text-white"
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/15">
+            <RotateCcw size={18} strokeWidth={2.6} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-extrabold">
+              前回のメニューをまとめて追加 · {previous.menus.length}種目
+            </span>
+            <span className="block truncate text-xs font-semibold text-white/70">
+              {formatDate(previous.at)} {previous.menus.map((m) => m.name).join("、")}
+            </span>
+          </span>
+        </motion.button>
+      )}
+
       {exercises.length === 0 && (
         <motion.button
           type="button"
@@ -171,8 +203,13 @@ function MenuRow({
   const x = useMotionValue(0);
   // A flick is not a tap: the drag that deletes must not also open the menu.
   const dragged = useRef(false);
-  const delOpacity = useTransform(x, [-SWIPE, -12], [1, 0]);
-  const delScale = useTransform(x, [-SWIPE, -12], [1.1, 0.6]);
+  const delOpacity = useTransform(x, [-REVEAL, -12], [1, 0]);
+  const delScale = useTransform(x, [-REVEAL, -12], [1, 0.6]);
+  const [revealed, setRevealed] = useState(false);
+  const reveal = (on: boolean) => {
+    setRevealed(on);
+    void animate(x, on ? -REVEAL : 0, spring);
+  };
   const selected = useStore((s) => s.selectedExerciseId === ex.id);
   const selectExercise = useStore((s) => s.selectExercise);
   const last = useStore((s) => lastLogFor(s.logs, ex.id));
@@ -211,13 +248,21 @@ function MenuRow({
       }}
       className="relative list-none rounded-[22px]"
     >
-      <div className="absolute inset-0 flex items-center justify-end overflow-hidden rounded-[22px] px-5">
-        <motion.div
+      <div className="absolute inset-y-0 right-0 flex items-center pr-1.5">
+        <motion.button
+          type="button"
           style={{ opacity: delOpacity, scale: delScale }}
-          className="flex items-center gap-1.5 font-bold text-danger"
+          aria-label={`${ex.name}を削除`}
+          data-testid="menu-delete"
+          disabled={!revealed}
+          onClick={() => {
+            haptic([10, 40, 10]);
+            onDelete();
+          }}
+          className="flex h-[calc(100%-8px)] w-[84px] flex-col items-center justify-center gap-0.5 rounded-[18px] bg-danger text-xs font-bold text-white"
         >
-          削除 <Trash2 size={20} />
-        </motion.div>
+          <Trash2 size={20} /> 削除
+        </motion.button>
       </div>
 
       <motion.div
@@ -228,24 +273,24 @@ function MenuRow({
         style={{ x, touchAction: "pan-y" }}
         drag="x"
         dragDirectionLock
-        dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.85, right: 0 }}
+        dragConstraints={{ left: -REVEAL, right: 0 }}
+        dragElastic={{ left: 0.2, right: 0 }}
+        dragMomentum={false}
         dragSnapToOrigin={false}
         onPointerDown={() => (dragged.current = false)}
         onDragStart={() => (dragged.current = true)}
         onDragEnd={(_, info) => {
-          if (info.offset.x < -SWIPE || info.velocity.x < -800) {
-            haptic([10, 40, 10]);
-            void animate(x, -480, { duration: 0.22 }).then(onDelete);
-          } else {
-            void animate(x, 0, spring);
-          }
+          const open = revealed ? info.offset.x < REVEAL / 2 : info.offset.x < -REVEAL / 2 || info.velocity.x < -600;
+          if (open && !revealed) haptic(12);
+          reveal(open);
         }}
         // Tapping a menu selects it (the timer follows a cardio menu) and opens its input sheet.
         onTap={() => {
           if (dragged.current) return;
           haptic(8);
-          open();
+          // An open row closes first, so reaching for 削除 and missing does not open the menu.
+          if (revealed) reveal(false);
+          else open();
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {

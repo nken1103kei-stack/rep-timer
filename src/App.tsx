@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Copy, Undo2 } from "lucide-react";
 import { useStore } from "./lib/store";
 import { bootstrap, refreshPlan, useSession } from "./lib/sync";
 import { unlockAudio } from "./lib/feedback";
 import { cardioTimer } from "./lib/record";
+import { hideToast, showToast, useToast } from "./lib/toast";
 import { livePreferred, startLive } from "./lib/live";
 import { notificationsSupported } from "./lib/background";
 import type { Exercise, Preset } from "./lib/types";
@@ -30,7 +31,6 @@ type SheetState =
   | { type: "account" }
   | null;
 
-type Toast = { id: number; text: string; undo?: () => void };
 
 const MIN_SKELETON_MS = 500;
 
@@ -39,9 +39,8 @@ export default function App() {
   const [minElapsed, setMinElapsed] = useState(false);
   const [sheet, setSheet] = useState<SheetState>(null);
   const [run, setRun] = useState<{ preset: Preset; exercise: Exercise | null } | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
+  const toast = useToast((s) => s.toast);
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     // Back from Stripe Checkout / the customer portal.
@@ -75,13 +74,6 @@ export default function App() {
     if (r === "copied") showToast({ text: "クリップボードにコピーしました。LINE や SNS に貼り付けて共有できます" });
     else if (r === "failed") setManualShare(text);
     else if (r === "empty") showToast({ text: "今日の記録はまだありません。メニューをタップして記録すると共有できます" });
-  };
-
-  const showToast = (t: Omit<Toast, "id">) => {
-    clearTimeout(toastTimer.current);
-    const next = { ...t, id: Date.now() };
-    setToast(next);
-    toastTimer.current = setTimeout(() => setToast(null), next.undo ? 4000 : 2200);
   };
 
   const deleteExercise = (id: string) => {
@@ -214,7 +206,7 @@ export default function App() {
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 80, opacity: 0 }}
             transition={spring}
-            className="fixed inset-x-4 bottom-[max(env(safe-area-inset-bottom),20px)] z-[70] mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl bg-ink/90 py-2 pr-2 pl-4 text-white shadow-2xl backdrop-blur-xl"
+            className="fixed inset-x-4 bottom-[max(env(safe-area-inset-bottom),20px)] z-[75] mx-auto flex max-w-sm items-center justify-between gap-3 rounded-2xl bg-ink/90 py-2 pr-2 pl-4 text-white shadow-2xl backdrop-blur-xl"
           >
             <span className="truncate text-sm font-semibold">{toast.text}</span>
             {toast.undo && (
@@ -223,9 +215,8 @@ export default function App() {
               whileTap={{ scale: 0.9 }}
               data-testid="toast-undo"
               onClick={() => {
-                clearTimeout(toastTimer.current);
                 toast.undo?.();
-                setToast(null);
+                hideToast();
               }}
               className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-bold"
             >

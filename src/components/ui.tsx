@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { haptic } from "../lib/feedback";
 import { useStore } from "../lib/store";
 import { category, displayWeight, fromUnit, type CategoryId } from "../lib/catalog";
-import { unitLabel } from "../lib/stats";
+import { cardioRestSec, cardioWorkSec, unitLabel } from "../lib/stats";
 import type { SetEntry } from "../lib/types";
 import { nextSetType, SET_TYPE } from "../lib/record";
 import { openProSheet } from "../lib/proSheet";
@@ -304,18 +304,102 @@ export function WeightStepper({ value, onChange }: { value: number; onChange: (k
 }
 
 /** Work minutes, rest minutes (0 = no rest) and rounds; these drive the interval timer. */
+const clockText = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+/** Typed digits fill from the right, like a microwave: 1, 2, 3, 0 reads 12:30. */
+const digitsOf = (text: string) => text.replace(/\D/g, "").replace(/^0+/, "").slice(-5);
+const secondsOf = (digits: string) => {
+  const n = Number(digits || 0);
+  return Math.floor(n / 100) * 60 + (n % 100);
+};
+const digitsText = (digits: string) => {
+  const padded = digits.padStart(3, "0");
+  return `${Number(padded.slice(0, -2))}:${padded.slice(-2)}`;
+};
+
+/** Minutes and seconds in one cell: ± moves by `step` seconds, and tapping the time lets you type it. */
+export function TimeField({
+  label,
+  value,
+  onChange,
+  step,
+  min,
+  max,
+  testId,
+}: {
+  label: string;
+  value: number;
+  onChange: (sec: number) => void;
+  step: number;
+  min: number;
+  max: number;
+  testId?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const bump = (d: number) => {
+    haptic(8);
+    onChange(clamp(value + d));
+  };
+  const text = draft === null ? clockText(value) : digitsText(draft);
+  const button = "grid size-9 shrink-0 place-items-center rounded-xl bg-white/80 shadow-sm min-[360px]:size-10";
+  return (
+    <div className="glass flex items-center justify-between rounded-2xl px-1 py-1.5" data-testid={testId}>
+      <motion.button type="button" whileTap={{ scale: 0.85 }} className={button} aria-label={`${label}を減らす`} onClick={() => bump(-step)}>
+        <Minus size={18} strokeWidth={2.6} />
+      </motion.button>
+      <label className="flex min-w-0 flex-col items-center">
+        <span className="text-[10px] font-semibold tracking-wider whitespace-nowrap text-mute">{label} 分:秒</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          enterKeyHint="done"
+          aria-label={label}
+          value={text}
+          style={{ width: `${text.length + 0.9}ch` }}
+          onFocus={(e) => {
+            setDraft(digitsOf(clockText(value)));
+            e.target.select();
+            revealField(e.target);
+          }}
+          onChange={(e) => {
+            const digits = digitsOf(e.target.value);
+            setDraft(digits);
+            onChange(clamp(secondsOf(digits)));
+          }}
+          onBlur={() => setDraft(null)}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          className="bg-transparent text-center font-display text-[clamp(1.25rem,6.5vw,1.875rem)] leading-9 font-extrabold italic outline-none"
+        />
+      </label>
+      <motion.button type="button" whileTap={{ scale: 0.85 }} className={button} aria-label={`${label}を増やす`} onClick={() => bump(step)}>
+        <Plus size={18} strokeWidth={2.6} />
+      </motion.button>
+    </div>
+  );
+}
+
 export function CardioFields({ value, onChange }: { value: CardioForm; onChange: (v: CardioForm) => void }) {
-  const workSec = value.workSec ?? 0;
   return (
     <div className="space-y-3" data-testid="cardio-fields">
-      {/* The work time can be seconds only, but never zero in total. */}
       <div className="grid grid-cols-2 gap-3">
-        <Stepper label="運動" unit="分" min={workSec > 0 ? 0 : 1} max={600} value={value.reps} onChange={(reps) => onChange({ ...value, reps })} testId="minutes" />
-        <Stepper label="運動の秒" unit="秒" step={5} min={value.reps > 0 ? 0 : 1} max={59} value={workSec} onChange={(s) => onChange({ ...value, workSec: s })} testId="seconds" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Stepper label="休憩" unit="分" min={0} max={120} value={value.rest} onChange={(rest) => onChange({ ...value, rest })} testId="rest-minutes" />
-        <Stepper label="休憩の秒" unit="秒" step={5} min={0} max={59} value={value.restSec ?? 0} onChange={(s) => onChange({ ...value, restSec: s })} testId="rest-seconds" />
+        <TimeField
+          label="運動"
+          step={30}
+          min={1}
+          max={600 * 60}
+          value={cardioWorkSec(value)}
+          onChange={(sec) => onChange({ ...value, reps: Math.floor(sec / 60), workSec: sec % 60 })}
+          testId="work-time"
+        />
+        <TimeField
+          label="休憩"
+          step={15}
+          min={0}
+          max={120 * 60}
+          value={cardioRestSec(value)}
+          onChange={(sec) => onChange({ ...value, rest: Math.floor(sec / 60), restSec: sec % 60 })}
+          testId="rest-time"
+        />
       </div>
       <Stepper label="セット" min={1} max={50} value={value.sets} onChange={(sets) => onChange({ ...value, sets })} testId="cardio-sets" />
     </div>

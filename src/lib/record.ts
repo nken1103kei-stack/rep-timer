@@ -1,4 +1,5 @@
-import { cardioRestSec, cardioWorkSec, setsOf } from "./stats";
+import { cardioRestSec, cardioSeconds, cardioWorkSec, formatMinSec, formatVolume, formatWeight, setsOf, volumeOf } from "./stats";
+import type { CategoryId, Unit } from "./catalog";
 import type { Exercise, LogEntry, SetEntry } from "./types";
 
 import type { SetType } from "./types";
@@ -32,6 +33,29 @@ export function toLog(ex: Exercise, form: RecordForm): Omit<LogEntry, "id" | "at
   if (ex.category === "cardio") return { exerciseId: ex.id, weight: 0, ...form.cardio };
   const first = form.sets[0];
   return { exerciseId: ex.id, weight: first.weight, reps: first.reps, sets: form.sets.length, detail: form.sets };
+}
+
+/** What a new record means against the earlier ones, shown right after saving. Null when there is nothing to compare or nothing changed. */
+export function recordFeedback(history: LogEntry[], draft: Omit<LogEntry, "id" | "at" | "name" | "category">, category: CategoryId, unit: Unit) {
+  const prev = history[0];
+  if (!prev) return null;
+  const now = { ...draft, category };
+  const before = { ...prev, category };
+  if (category === "cardio") {
+    const diff = cardioSeconds(now) - cardioSeconds(before);
+    return diff ? `前回より ${diff > 0 ? "+" : "-"}${formatMinSec(Math.abs(diff))}` : null;
+  }
+  const parts: string[] = [];
+  const top = Math.max(...setsOf(now).map((s) => s.weight));
+  const best = Math.max(...history.flatMap((l) => setsOf({ ...l, category }).map((s) => s.weight)));
+  if (top > best) parts.push(`自己ベスト更新 ${formatWeight(top, unit)}`);
+  const volume = volumeOf(now);
+  const prevVolume = volumeOf(before);
+  if (prevVolume > 0 && volume !== prevVolume) {
+    const sign = volume > prevVolume ? "+" : "-";
+    parts.push(`前回比 ${sign}${formatVolume(Math.abs(volume - prevVolume), unit)} ${sign}${Math.round((Math.abs(volume - prevVolume) / prevVolume) * 100)}%`);
+  }
+  return parts.join(" · ") || null;
 }
 
 /** Interval-timer settings of a cardio menu (minutes and seconds → seconds). */
