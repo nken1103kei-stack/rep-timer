@@ -1,7 +1,10 @@
 export type QuoteCategory = "筋肉痛" | "失敗" | "食事" | "筋トレ" | "脚トレ" | "ジム";
-export type Quote = { id: number; name: string; quote: string; category: QuoteCategory };
+/** `note` says what kind of words a real person's quote is, such as a summary or a translation. Without one it is a parody. */
+export type Quote = { id: number; name: string; quote: string; category: QuoteCategory; note?: string };
 
-/** Parody quotes from fictional "fitness legends" shown at the top of the home screen. */
+export const PARODY_NOTE = "フィクション・名言パロディ";
+
+/** Shown at the top of the home screen: parodies from fictional "fitness legends", and words of real bodybuilders. */
 export const QUOTES: Quote[] = [
   { id: 1, name: "ソクラテス・スクワテス", quote: "無知の知。脚トレの翌日は、歩けぬことを知る。", category: "筋肉痛" },
   { id: 2, name: "ジュリアス・シーザップ", quote: "来た、見た、挙げた。そして腰をやった。", category: "失敗" },
@@ -24,6 +27,13 @@ export const QUOTES: Quote[] = [
   { id: 28, name: "夏目ソウセ筋", quote: "月が綺麗ですね。いや、それより君の三角筋が綺麗ですね。", category: "筋トレ" },
   { id: 29, name: "太宰オサムキ", quote: "生まれて、すみません。脚トレ飛ばして、もっとすみません。", category: "脚トレ" },
   { id: 30, name: "フランツ・カフカーフレイズ", quote: "ある朝目覚めると、私は巨大な筋肉痛に変身していた。", category: "筋肉痛" },
+  { id: 31, name: "ロニー・コールマン", quote: "Light Weight, Baby!", category: "筋トレ", note: "迷言" },
+  { id: 33, name: "CTフレッチャー", quote: "俺がボスだ！俺の腕よ、成長しろ！", category: "筋トレ", note: "迷言・訳" },
+  { id: 34, name: "ドリアン・イエーツ", quote: "十分に追い込めなかったなら、もう1セットやればいい。", category: "筋トレ", note: "実践・要旨" },
+  { id: 35, name: "ジェイ・カトラー", quote: "トレーニング強度を、持ち上げる重量と勘違いしている人は多い。", category: "筋トレ", note: "名言・要旨" },
+  { id: 36, name: "フィル・ヒース", quote: "鏡の自分に問いかけろ。もう1回できるか？", category: "ジム", note: "名言・訳" },
+  { id: 37, name: "なかやまきんに君", quote: "筋肉を裏切ってはいけない！", category: "筋トレ", note: "名言" },
+  { id: 38, name: "横川尚隆", quote: "絶対仕事辞めてください", category: "ジム", note: "迷言" },
 ];
 
 /** Accent per quote category, taken from the body-part palette. */

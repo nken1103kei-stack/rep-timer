@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Dumbbell, RefreshCw } from "lucide-react";
-import { pickQuote, QUOTE_COLORS } from "../lib/quotes";
+import { PARODY_NOTE, pickQuote, QUOTE_COLORS } from "../lib/quotes";
 import { haptic } from "../lib/feedback";
 import { spring } from "./ui";
 
-/** Today's parody quote: random on every open, tap for another. */
+/** Today's quote, parody or real: random on every open, tap for another. */
 export function QuoteCard() {
   const [quote, setQuote] = useState(() => pickQuote(null));
   const [spins, setSpins] = useState(0);
@@ -63,10 +63,11 @@ export function QuoteCard() {
           <span className="mt-1 block text-xs font-bold text-ink/70" data-testid="quote-name">
             — {quote.name} —
           </span>
+          <span className="mt-1 block text-[9px] font-semibold text-slate-400" data-testid="quote-note">
+            ※{quote.note ?? PARODY_NOTE}
+          </span>
         </motion.span>
       </AnimatePresence>
-
-      <span className="relative mt-1 block text-[9px] font-semibold text-slate-400">※フィクション・名言パロディ</span>
     </motion.button>
   );
 }

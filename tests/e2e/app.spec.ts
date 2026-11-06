@@ -66,11 +66,27 @@ test("shows a full-screen skeleton, then menus and timers on the first screen", 
   await expect(page.getByTestId("preset-chip")).toHaveCount(5);
 });
 
-test("a random parody quote sits at the top; tapping shows another", async ({ page }) => {
+test("real people's quotes are not labelled as fiction", async ({ page }) => {
+  // The last quote in the list, and the first parody.
+  await page.addInitScript(() => {
+    Math.random = () => 0.999;
+  });
+  await page.reload();
+  await expect(page.getByTestId("quote-name")).toHaveText("— 横川尚隆 —");
+  await expect(page.getByTestId("quote-text")).toHaveText("「絶対仕事辞めてください」");
+  await expect(page.getByTestId("quote-note")).toHaveText("※迷言");
+  await page.addInitScript(() => {
+    Math.random = () => 0;
+  });
+  await page.reload();
+  await expect(page.getByTestId("quote-note")).toHaveText("※フィクション・名言パロディ");
+});
+
+test("a random quote sits at the top; tapping shows another", async ({ page }) => {
   const quote = page.getByTestId("quote-card");
   await expect(quote).toBeVisible();
   await expect(quote).toContainText("本日の筋トレ偉人の名言");
-  await expect(quote).toContainText("※フィクション・名言パロディ");
+  await expect(page.getByTestId("quote-note")).toHaveText(/^※.+/);
   await expect(page.getByTestId("quote-text")).toHaveText(/^「.+」$/);
   await expect(page.getByTestId("quote-name")).toHaveText(/^— .+ —$/);
   // No category label (失敗・脚トレ…) on the card.
