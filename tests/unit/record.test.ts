@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { cardioTimer, initialRecord, toLog, recordFeedback } from "../../src/lib/record";
+import { cardioPlan, cardioRecord, cardioTimer, initialRecord, toLog, recordFeedback } from "../../src/lib/record";
 import { formatSet, setsOf, volumeOf } from "../../src/lib/stats";
-import { normalizeData } from "../../src/lib/store";
+import { normalizeData, useStore } from "../../src/lib/store";
 import { buildSegments } from "../../src/lib/timer";
 import type { Exercise, LogEntry } from "../../src/lib/types";
 
@@ -70,6 +70,27 @@ describe("cardio timer link", () => {
     expect(recordFeedback([log(60, 10)], draft(62.5, 10), "chest", "kg")).toBe("自己ベスト更新 62.5kg · 前回比 +75kg +4%");
     const cardio = { id: "l", exerciseId: "r", at: 1, weight: 0, reps: 10, sets: 1 };
     expect(recordFeedback([cardio], { exerciseId: "r", weight: 0, reps: 11, workSec: 30, sets: 1 }, "cardio", "kg")).toBe("前回より +1分30秒");
+  });
+
+  it("a cardio timer records what was done: the plan when it ran to the end, else the work time as one set", () => {
+    const plan = initialRecord(run, undefined).cardio;
+    // 5 s prepare, then 10 min work, 2 min rest, 10 min work, 2 min rest, 10 min work.
+    const segments = buildSegments({ prepare: 5, ...cardioTimer(run) });
+    const total = segments.reduce((m, s) => m + s.ms, 0);
+    expect(cardioRecord(segments, total, plan)).toEqual(plan);
+    expect(cardioRecord(segments, 3000, plan)).toBeNull();
+    // Stopped 1 min 30 s into the second work round: 10 min + 1 min 30 s, no rest.
+    expect(cardioRecord(segments, 5000 + 12 * 60_000 + 90_000, plan)).toEqual({ reps: 11, workSec: 30, rest: 0, sets: 1 });
+    expect(cardioRecord(segments, 5000 + 11 * 60_000, plan)).toEqual({ reps: 10, rest: 0, sets: 1 });
+  });
+
+  it("the time fields set the cardio plan and a cardio record leaves the plan alone", () => {
+    expect(cardioPlan({ reps: 12, workSec: 30, rest: 0, restSec: 45, sets: 2 })).toEqual({ reps: 12, workSec: 30, rest: 0, restSec: 45, sets: 2 });
+    expect(cardioPlan({ reps: 12, workSec: 0, rest: 1, sets: 1 })).toMatchObject({ workSec: undefined, restSec: undefined });
+    useStore.setState({ exercises: [{ ...run }], logs: [] });
+    useStore.getState().addLog({ exerciseId: "r", weight: 0, reps: 3, sets: 1, rest: 0 });
+    expect(useStore.getState().logs).toHaveLength(1);
+    expect(useStore.getState().exercises[0]).toMatchObject({ reps: 10, sets: 3, rest: 2 });
   });
 
   it("rest 0 runs the work rounds back to back", () => {

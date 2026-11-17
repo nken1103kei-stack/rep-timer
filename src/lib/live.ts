@@ -96,7 +96,7 @@ export function setLiveToggle(toggle: () => void) {
   for (const action of ["play", "pause"] as const) navigator.mediaSession.setActionHandler(action, onAction);
 }
 
-export type LiveStatus = { title: string; name: string; durationMs: number; positionMs: number; paused: boolean };
+export type LiveStatus = { title: string; name: string; durationMs: number; positionMs: number; paused: boolean; /** e.g. "10:45:30 まで": stays true if the page is held back. */ until?: string };
 
 /** Called every second. The title carries the time; the progress bar is only re-set when the phase or pause state changes. */
 export function updateLive(s: LiveStatus) {
@@ -107,7 +107,7 @@ export function updateLive(s: LiveStatus) {
     session.metadata = new MediaMetadata({
       title: s.title,
       artist: s.name,
-      album: "REPS",
+      album: s.until ? `REPS · ${s.until}` : "REPS",
       artwork: [{ src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" }],
     });
   }

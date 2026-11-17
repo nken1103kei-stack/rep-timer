@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useDragControls } from "motion/react";
-import { Crown, Minus, Plus, Timer, X } from "lucide-react";
+import { ArrowDown, Crown, Minus, Plus, Timer, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { haptic } from "../lib/feedback";
 import { useStore } from "../lib/store";
@@ -532,6 +532,24 @@ export function SetRows({
                 <X size={16} />
               </motion.button>
             </div>
+            {i < sets.length - 1 && (
+              // In the gap under the set label, so it covers no field: copies this set's weight and reps to the next.
+              <div className="relative h-0">
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.8 }}
+                  aria-label={`${i + 1}セット目の重量と回数を${i + 2}セット目にコピー`}
+                  data-testid="copy-down"
+                  onClick={() => {
+                    haptic(8);
+                    update(i + 1, { weight: set.weight, reps: set.reps });
+                  }}
+                  className="absolute top-[-6px] left-8 z-10 grid size-5 -translate-x-1/2 place-items-center rounded-full bg-white text-mute shadow-sm ring-1 ring-slate-900/10 after:absolute after:-inset-2.5"
+                >
+                  <ArrowDown size={12} strokeWidth={3} />
+                </motion.button>
+              </div>
+            )}
           </motion.div>
         ))}
       </AnimatePresence>

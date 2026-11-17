@@ -21,7 +21,7 @@ describe("daily menu list", () => {
     expect(useStore.getState().menuDay).toBe("2026-11-02");
   });
 
-  it("starts a new day with an empty list but keeps records, and re-adding brings the plan, memo and history back", () => {
+  it("starts a new day with an empty list but keeps records, and re-adding brings the plan and history back; the memo stays with its day", () => {
     const s = useStore.getState();
     s.startDay("2026-11-01");
     const id = s.addExercise({ ...bench, memo: "肩甲骨を寄せる" });
@@ -33,7 +33,8 @@ describe("daily menu list", () => {
     expect(day2.exercises).toHaveLength(0);
     expect(day2.selectedExerciseId).toBeNull();
     expect(day2.logs).toHaveLength(1);
-    expect(day2.archive?.[0]).toMatchObject({ id, weight: 70, memo: "肩甲骨を寄せる" });
+    expect(day2.archive?.[0]).toMatchObject({ id, weight: 70 });
+    expect(day2.archive?.[0].memo).toBeUndefined();
 
     // The same day again changes nothing.
     useStore.getState().startDay("2026-11-02");
@@ -41,7 +42,8 @@ describe("daily menu list", () => {
 
     useStore.getState().addExercises([bench]);
     const back = useStore.getState().exercises[0];
-    expect(back).toMatchObject({ id, weight: 70, memo: "肩甲骨を寄せる" });
+    expect(back).toMatchObject({ id, weight: 70 });
+    expect(back.memo).toBeUndefined();
     expect(useStore.getState().archive).toHaveLength(0);
   });
 

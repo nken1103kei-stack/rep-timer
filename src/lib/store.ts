@@ -101,11 +101,12 @@ export const useStore = create<State>()(
         selectExercise: (id) => set({ selectedExerciseId: id }),
         selectPreset: (id) => set({ selectedPresetId: id }),
         addExercise: (ex) => {
-          // Typed in by hand: the new plan wins, but the archived menu's id (history) and memo carry over.
+          // Typed in by hand: the new plan wins, but the archived menu's id (history) and the day's memo carry over.
           const old = (get().archive ?? []).find((a) => sameMenu(a, ex));
           const id = old?.id ?? uid();
+          const memo = ex.memo ?? old?.memo;
           set((s) => ({
-            exercises: [...s.exercises, { ...ex, memo: ex.memo ?? old?.memo, id }],
+            exercises: [...s.exercises, { ...ex, ...(memo ? { memo } : {}), id }],
             archive: (s.archive ?? []).filter((a) => a !== old),
             ...touched(),
           }));
@@ -149,10 +150,11 @@ export const useStore = create<State>()(
             const ex = s.exercises.find((e) => e.id === log.exerciseId);
             return {
               logs: [{ ...log, id: uid(), at: Date.now(), name: ex?.name, category: ex?.category }, ...s.logs],
-              // The latest record becomes the menu's default for next time.
+              // The latest record becomes the menu's default for next time. Cardio is set on its own time fields,
+              // and a timer stopped early must not shorten the plan.
               exercises: s.exercises.map((e) =>
-                e.id === log.exerciseId
-                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, detail: log.detail, ...(e.category === "cardio" ? { rest: log.rest ?? 0, workSec: log.workSec, restSec: log.restSec } : {}) }
+                e.id === log.exerciseId && e.category !== "cardio"
+                  ? { ...e, weight: log.weight, reps: log.reps, sets: log.sets, detail: log.detail }
                   : e,
               ),
               ...touched(),
@@ -204,10 +206,12 @@ export const useStore = create<State>()(
             // First run on this version: adopt today without clearing anything.
             if (!s.menuDay || s.exercises.length === 0) return { menuDay: today };
             const kept = (s.archive ?? []).filter((a) => !s.exercises.some((e) => sameMenu(a, e)));
+            // A memo belongs to its day: the plan carries over to the next time, the memo does not.
+            const dayless = ({ memo: _memo, ...e }: Exercise) => e;
             return {
               menuDay: today,
               exercises: [],
-              archive: [...s.exercises, ...kept].slice(0, ARCHIVE_MAX),
+              archive: [...s.exercises, ...kept].map(dayless).slice(0, ARCHIVE_MAX),
               selectedExerciseId: null,
               ...touched(),
             };

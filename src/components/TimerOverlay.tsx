@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Bell, BellRing, Check, Pause, Play, SkipForward, Square, X } from "lucide-react";
+import { Bell, BellRing, Check, Pause, PictureInPicture2, Play, SkipForward, Square, Undo2, X } from "lucide-react";
 import { useStore } from "../lib/store";
 import { buildSegments, describeTimer, formatClock, formatDuration, isTempoPhase, segmentStart, timerAt, tutOf, type Phase } from "../lib/timer";
-import type { Exercise, Preset } from "../lib/types";
+import type { Exercise, LogEntry, Preset } from "../lib/types";
+import type { Segment } from "../lib/timer";
 import { beep, haptic, keepAwake } from "../lib/feedback";
-import { CardioFields, PrimaryButton, SetRows, spring } from "./ui";
-import { initialRecord, recordFeedback, toLog } from "../lib/record";
+import { PrimaryButton, SetRows, spring } from "./ui";
+import { cardioRecord, initialRecord, recordFeedback, toLog } from "../lib/record";
 import { logsOfExercise } from "../lib/analytics";
 import { showToast } from "../lib/toast";
-import { endClock, minSec, useBackgroundStatus, useNotificationPermission } from "../lib/background";
+import { endClock, endClockSec, minSec, useBackgroundStatus, useNotificationPermission } from "../lib/background";
+import { openPip, pipSupported } from "../lib/pip";
 import { liveRunning, liveSupported, setLivePreferred, setLiveToggle, startLive, stopLive } from "../lib/live";
-import { formatMinSec } from "../lib/stats";
+import { formatMinSec, formatSet } from "../lib/stats";
 
 /** Plain Japanese names for the tab title and the background notification. */
 const PHASE_JA: Record<Phase, string> = {
@@ -120,14 +122,21 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
           const at = timerAt(segments, (paused ?? t) - startRef.current - pausedTotal.current);
           const round = at.rounds > 1 ? ` ${at.round}/${at.rounds}` : "";
           const name = exercise?.name ?? preset.name;
-          const live = { name, durationMs: at.segmentMs, positionMs: at.segmentMs - at.remainingMs, paused: paused !== null };
-          if (paused !== null) return { title: `一時停止中 ${minSec(at.remainingMs)}`, body: `${name}${round} · タップで戻る`, phase: `paused-${at.index}`, live };
+          const until = `${endClockSec(t + at.remainingMs)} まで`;
+          const live = { name, durationMs: at.segmentMs, positionMs: at.segmentMs - at.remainingMs, paused: paused !== null, ...(paused === null ? { until } : {}) };
+          const color = PHASE[at.phase].color;
+          if (paused !== null) {
+            const title = `一時停止中 ${minSec(at.remainingMs)}`;
+            return { title, still: title, body: `${name}${round} · タップで戻る`, phase: `paused-${at.index}`, live, pip: { label: `一時停止中${round}`, time: minSec(at.remainingMs), sub: name, color } };
+          }
           const end = t + at.totalMs - at.elapsedMs;
           return {
             phase: String(at.index),
             live,
             title: `${PHASE_JA[at.phase]}${round} 残り ${minSec(at.remainingMs)}`,
+            still: `${PHASE_JA[at.phase]}${round} · ${until}`,
             body: `${name} · ${PHASE_JA[at.phase]}は ${endClock(t + at.remainingMs)} まで · 全体 ${endClock(end)} に終了`,
+            pip: { label: `${PHASE_JA[at.phase]}${round}`, time: minSec(at.remainingMs), sub: `${name} · ${endClock(end)} に終了`, color },
           };
         },
   );
@@ -160,6 +169,21 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
     }
     setLive(!live);
   };
+
+  // A floating window over other apps, with the time left drawn every second.
+  const [pip, setPip] = useState(false);
+  const togglePip = async () => {
+    haptic(10);
+    const at = timerAt(segments, elapsed);
+    const opened = await openPip(
+      { label: PHASE_JA[at.phase], time: minSec(at.remainingMs), sub: exercise?.name ?? preset.name, color: meta.color },
+      () => setPip(false),
+    );
+    setPip(opened);
+  };
+
+  // What was done when the timer stopped, for the record: stopping jumps to the end, so it is kept here.
+  const stoppedAt = useRef<number | null>(null);
 
   const skip = () => {
     haptic(12);
@@ -198,6 +222,19 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
             </div>
           </div>
           <div className="flex shrink-0 gap-2">
+            {pipSupported() && st.phase !== "done" && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.85 }}
+                onClick={() => void togglePip()}
+                aria-label="残り時間を小窓で表示"
+                data-testid="timer-pip"
+                data-on={pip}
+                className={`grid size-11 place-items-center rounded-full ${pip ? "bg-go/15 text-go" : "glass"}`}
+              >
+                <PictureInPicture2 size={18} />
+              </motion.button>
+            )}
             {(liveSupported() || (permission !== "unsupported" && permission !== "denied")) && st.phase !== "done" && (
               <motion.button
                 type="button"
@@ -227,7 +264,15 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
 
         <AnimatePresence mode="wait">
           {st.phase === "done" ? (
-            <DoneView key="done" exercise={exercise} preset={preset} totalMs={st.totalMs} onClose={onClose} />
+            <DoneView
+              key="done"
+              exercise={exercise}
+              preset={preset}
+              segments={segments}
+              doneMs={stoppedAt.current ?? st.totalMs}
+              totalMs={st.totalMs}
+              onClose={onClose}
+            />
           ) : (
             <motion.div key="run" className="flex flex-1 flex-col" exit={{ opacity: 0, scale: 0.9 }}>
               <div className="relative mx-auto mt-6 grid aspect-square w-full max-w-[320px] place-items-center">
@@ -314,6 +359,7 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
                   onClick={() => {
                     haptic(20);
                     // Stop: jump to the end so the record form opens with what was done.
+                    stoppedAt.current = elapsed;
                     if (pausedAt !== null) {
                       pausedTotal.current += Date.now() - pausedAt;
                       setPausedAt(null);
@@ -358,7 +404,21 @@ export function TimerOverlay({ preset, exercise, onClose }: { preset: Preset; ex
   );
 }
 
-function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise | null; preset: Preset; totalMs: number; onClose: () => void }) {
+function DoneView({
+  exercise,
+  preset,
+  segments,
+  doneMs,
+  totalMs,
+  onClose,
+}: {
+  exercise: Exercise | null;
+  preset: Preset;
+  segments: Segment[];
+  doneMs: number;
+  totalMs: number;
+  onClose: () => void;
+}) {
   const addLog = useStore((s) => s.addLog);
   const logs = useStore((s) => s.logs);
   const unit = useStore((s) => s.unit);
@@ -372,6 +432,22 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
     const record = initialRecord(exercise, history[0], timed ? preset.rounds : undefined);
     return tempo ? { ...record, sets: record.sets.map((x) => ({ ...x, reps: preset.reps ?? x.reps })) } : record;
   });
+  // Cardio records itself here, once: running the timer is the record, so typing the time in never makes a second one.
+  const [cardioLog, setCardioLog] = useState<LogEntry | null | "undone">(null);
+  const recorded = useRef(false);
+  useEffect(() => {
+    if (!cardio || !exercise || recorded.current) return;
+    recorded.current = true;
+    const done = cardioRecord(segments, doneMs, initialRecord(exercise, undefined).cardio);
+    if (!done) return;
+    const draft = toLog(exercise, { sets: [], cardio: done });
+    const note = recordFeedback(history, draft, exercise.category, unit);
+    addLog(draft);
+    setCardioLog(useStore.getState().logs[0]);
+    if (note) showToast({ text: note });
+    // Once, with the values from when the timer ended.
+  }, []);
+
   return (
     <motion.div
       className="flex flex-1 flex-col"
@@ -398,14 +474,38 @@ function DoneView({ exercise, preset, totalMs, onClose }: { exercise: Exercise |
         )}
       </div>
       <div className="no-scrollbar mt-auto -mx-1 max-h-[58dvh] space-y-3 overflow-y-auto px-1 pt-4">
-        {exercise && (
-          <>
-            {form &&
-              (cardio ? (
-                <CardioFields value={form.cardio} onChange={(c) => setForm({ ...form, cardio: c })} />
+        {exercise && cardio && (
+          <div className="glass flex items-center gap-3 rounded-2xl px-4 py-3" data-testid={cardioLog && cardioLog !== "undone" ? "cardio-recorded" : cardioLog === "undone" ? "cardio-undone" : "cardio-not-recorded"}>
+            <div className="min-w-0 flex-1">
+              {cardioLog && cardioLog !== "undone" ? (
+                <>
+                  <div className="text-xs font-bold text-go">記録しました</div>
+                  <div className="truncate font-display text-lg font-bold">{formatSet({ ...cardioLog, category: "cardio" }, unit)}</div>
+                </>
               ) : (
-                <SetRows sets={form.sets} onChange={(sets) => setForm({ ...form, sets })} />
-              ))}
+                <div className="text-sm font-bold text-mute">{cardioLog === "undone" ? "記録を取り消しました" : "運動する前に止めたので、記録していません"}</div>
+              )}
+            </div>
+            {cardioLog && cardioLog !== "undone" && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.9 }}
+                data-testid="cardio-undo"
+                onClick={() => {
+                  haptic(10);
+                  useStore.getState().removeLog(cardioLog.id);
+                  setCardioLog("undone");
+                }}
+                className="flex h-10 shrink-0 items-center gap-1 rounded-full bg-white/80 px-3 text-xs font-bold"
+              >
+                <Undo2 size={14} /> 取り消す
+              </motion.button>
+            )}
+          </div>
+        )}
+        {exercise && !cardio && (
+          <>
+            {form && <SetRows sets={form.sets} onChange={(sets) => setForm({ ...form, sets })} />}
             <PrimaryButton
               testId="record-save"
               onClick={() => {

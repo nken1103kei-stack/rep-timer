@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
-import { Check, Crown, Download, Lock, LogOut, Pencil, StickyNote, Trash2, Upload } from "lucide-react";
+import { Check, Crown, Download, Lock, LogOut, Pencil, Play, StickyNote, Trash2, Upload } from "lucide-react";
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
 import { exportCsv, importCsv } from "../lib/csv";
 import { CATEGORIES, DEFAULT_TEMPLATE, fromUnit, type CategoryId } from "../lib/catalog";
 import { cardioSeconds, formatDate, formatMinSec, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
-import { initialRecord, recordFeedback, SET_TYPE, toLog, type RecordForm } from "../lib/record";
+import { cardioPlan, initialRecord, recordFeedback, SET_TYPE, toLog, type RecordForm } from "../lib/record";
 import { showToast } from "../lib/toast";
 import { signInWithGoogle, signOut, usePro, useSession } from "../lib/sync";
 import { buildSegments, formatDuration, formatTempo, totalMs, tutOf, type Tempo, type TimerKind } from "../lib/timer";
@@ -106,13 +106,23 @@ export function MenuEditor({ open, id, onClose }: { open: boolean; id: string | 
             onChange={(sets) => setForm({ ...form, weight: sets[0].weight, reps: sets[0].reps, sets: sets.length, detail: sets })}
           />
         )}
-        <MemoField value={form.memo ?? ""} onChange={(memo) => setForm({ ...form, memo })} />
       </div>
     </Sheet>
   );
 }
 
-export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: () => void; onEdit: (id: string) => void }) {
+export function LogSheet({
+  id,
+  onClose,
+  onEdit,
+  onStart,
+}: {
+  id: string | null;
+  onClose: () => void;
+  onEdit: (id: string) => void;
+  /** Cardio: runs the menu's timer, which records what was done when it ends. */
+  onStart: (id: string) => void;
+}) {
   const exercise = useStore((s) => s.exercises.find((e) => e.id === id));
   const logs = useStore((s) => s.logs);
   const unit = useStore((s) => s.unit);
@@ -194,7 +204,13 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
             </ProLock>
           )}
           {cardio ? (
-            <CardioFields value={form.cardio} onChange={(c) => setForm({ ...form, cardio: c })} />
+            <CardioFields
+              value={form.cardio}
+              onChange={(c) => {
+                setForm({ ...form, cardio: c });
+                updateExercise(exercise.id, cardioPlan(c));
+              }}
+            />
           ) : (
             <>
               {history[0] && <PreviousRecord log={history[0]} text={formatSet({ ...history[0], category: exercise.category }, unit)} sets={form.sets} onChange={(sets) => setForm({ ...form, sets })} />}
@@ -216,9 +232,14 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
               />
             </>
           )}
+          {cardio && (
+            <PrimaryButton testId="cardio-start" onClick={() => onStart(exercise.id)}>
+              <Play size={18} fill="currentColor" /> タイマーを開始
+            </PrimaryButton>
+          )}
           <PrimaryButton
             testId="log-save"
-            tone={saved ? "ink" : "accent"}
+            tone={cardio ? "ghost" : saved ? "ink" : "accent"}
             onClick={() => {
               const draft = toLog(exercise, form);
               const note = recordFeedback(history, draft, exercise.category, unit);
@@ -240,6 +261,8 @@ export function LogSheet({ id, onClose, onEdit }: { id: string | null; onClose: 
                   <>
                     <Check size={18} strokeWidth={3} /> 記録しました
                   </>
+                ) : cardio ? (
+                  "タイマーを使わずに記録"
                 ) : (
                   "記録する"
                 )}
@@ -362,7 +385,7 @@ export function ExerciseHistorySheet({ history, onClose }: { history: ExerciseHi
 
 export const MEMO_MAX = 60;
 
-/** One-line note per menu (form cues, machine settings). It shows on the menu card. */
+/** One-line note for the day's menu (form cues, machine settings). It shows on the menu card and is not carried to the next day. */
 function MemoField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <label className="glass flex items-center gap-2 rounded-2xl px-3" data-testid="memo-field">

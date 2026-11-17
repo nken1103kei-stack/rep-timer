@@ -494,18 +494,22 @@ test("a cardio menu drives the timer with its work / rest minutes and sets", asy
   await expect(page.getByTestId("timer-round")).toHaveText("2 / 2");
   await page.getByTestId("timer-skip").click();
 
+  // Running the timer is the record: nothing to fill in, and no second record.
   const done = page.getByTestId("timer-done");
-  await expect(done.getByTestId("cardio-fields")).toBeVisible();
+  await expect(done.getByTestId("cardio-recorded")).toContainText("1分 × 2");
+  await expect(done.getByTestId("record-save")).toHaveCount(0);
   await expect(done.getByTestId("set-rows")).toHaveCount(0);
-  await expect(done.getByRole("textbox", { name: "運動", exact: true })).toHaveValue("1:00");
-  await page.getByTestId("record-save").click();
+  await page.getByTestId("done-close").click();
   await expect(overlay).toBeHidden();
 
   // With rest > 0 there is a REST phase between rounds.
   await openMenu(page, "ランニング");
   const sheet = page.getByTestId("log-sheet");
+  await expect(sheet.getByTestId("log-row")).toHaveCount(1);
   await expect(sheet.getByTestId("log-row")).toContainText("1分 × 2");
   await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("100");
+  // A record without the timer is still possible, but only on purpose.
+  await expect(sheet.getByTestId("log-save")).toHaveText("タイマーを使わずに記録");
   await sheet.getByTestId("log-save").click();
   await expect(sheet.getByTestId("log-row").first()).toContainText("1分 × 2（休憩1分）");
   await page.getByTestId("sheet-scrim").click({ position: { x: 20, y: 20 } });
@@ -792,7 +796,7 @@ test("menu cards show the full name and a one-line memo", async ({ page }) => {
   // Not cut off: the text wraps instead of overflowing with an ellipsis.
   expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && getComputedStyle(el).textOverflow !== "ellipsis")).toBe(true);
 
-  // Memo from the record sheet shows on the card and in the editor.
+  // The memo is written in one place, the record sheet, and shows on the card; the menu editor has no second copy.
   await openMenu(page, "スクワット");
   await page.getByTestId("log-sheet").getByTestId("memo-input").fill("膝はつま先と同じ向き");
   await closeSheet(page);
@@ -800,9 +804,14 @@ test("menu cards show the full name and a one-line memo", async ({ page }) => {
   await openMenu(page, "スクワット");
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
-  await expect(editor.getByTestId("memo-input")).toHaveValue("膝はつま先と同じ向き");
-  await editor.getByTestId("memo-input").fill("");
+  await expect(editor).toBeVisible();
+  await expect(editor.getByTestId("memo-input")).toHaveCount(0);
   await editor.getByTestId("sheet-footer").getByTestId("menu-save").click();
+  await expect(editor).toBeHidden();
+  await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveText("膝はつま先と同じ向き");
+  await openMenu(page, "スクワット");
+  await page.getByTestId("log-sheet").getByTestId("memo-input").fill("");
+  await closeSheet(page);
   await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveCount(0);
   await page.reload();
   await expect(card(page, "スクワット")).toBeVisible();
@@ -822,7 +831,7 @@ test("a running timer shows its time outside the app and can be stopped", async 
   await expect.poll(() => page.title()).toBe("REPS");
 });
 
-test("a new day starts with an empty menu list; records stay and re-added menus come back as they were", async ({ page }) => {
+test("a new day starts with an empty menu list; records stay and re-added menus come back with their plan, without the old day's memo", async ({ page }) => {
   // Yesterday's list, with a memo and a record.
   const yesterday = { id: "m1", name: "ベンチプレス", category: "chest", weight: 70, reps: 8, sets: 3, memo: "肩甲骨を寄せる" };
   await page.evaluate((ex) => {
@@ -834,13 +843,14 @@ test("a new day starts with an empty menu list; records stay and re-added menus 
   await expect(page.getByTestId("menu-item")).toHaveCount(0);
   await expect(page.getByText("今日のメニューを追加")).toBeVisible();
 
-  // The library shows the last plan and adding it restores memo and history.
+  // The library shows the last plan and adding it restores plan and history; the memo was for that day.
   await page.getByTestId("menu-add").click();
   const item = page.locator('[data-testid=lib-item][data-name="ベンチプレス"]');
   await expect(item).toContainText("前回 70kg × 8 × 3");
   await item.click();
   await page.getByTestId("lib-submit").click();
-  await expect(page.locator('[data-testid=menu-item][data-name="ベンチプレス"] [data-testid=menu-memo]')).toHaveText("肩甲骨を寄せる");
+  await expect(card(page, "ベンチプレス")).toContainText("70kg × 8 × 3");
+  await expect(page.locator('[data-testid=menu-item][data-name="ベンチプレス"] [data-testid=menu-memo]')).toHaveCount(0);
   await openMenu(page, "ベンチプレス");
   await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
 });
@@ -909,7 +919,7 @@ test("deleting a menu keeps its records: history stays in the calendar and comes
   await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
 });
 
-test("cardio is set and recorded in minutes and seconds", async ({ page }) => {
+test("cardio: typing the time sets the timer and records nothing; running the timer records it once", async ({ page }) => {
   await seedMenus(page);
   await card(page, "ランニング").click();
   const sheet = page.getByTestId("log-sheet");
@@ -922,17 +932,40 @@ test("cardio is set and recorded in minutes and seconds", async ({ page }) => {
   await sheet.getByRole("textbox", { name: "休憩", exact: true }).fill("45");
   await expect(sheet.getByRole("textbox", { name: "休憩", exact: true })).toHaveValue("0:45");
   await expect(sheet.getByTestId("cardio-fields").locator("input")).toHaveCount(3);
-  await sheet.getByTestId("log-save").click();
-  await expect(sheet.getByTestId("log-row").first()).toContainText("12分30秒");
-  await expect(sheet.getByTestId("log-row").first()).toContainText("休憩45秒");
+  await expect(sheet.getByTestId("log-row")).toHaveCount(0);
   await closeSheet(page);
-  // The latest record becomes the timer's setting, and it survives a reload.
+
+  // The time is the timer's setting, and it survives a reload.
   await page.reload();
   await card(page, "ランニング").click();
-  await closeSheet(page);
+  await expect(sheet.getByRole("textbox", { name: "運動", exact: true })).toHaveValue("12:30");
+  await expect(sheet.getByTestId("log-row")).toHaveCount(0);
+  await sheet.getByTestId("cardio-start").click();
+  const overlay = page.getByTestId("timer-overlay");
+  await expect(overlay).toContainText("12分30秒 / 休憩45秒");
+
+  // Stopped before any work: no record.
+  await page.getByTestId("timer-stop").click();
+  await expect(page.getByTestId("cardio-not-recorded")).toBeVisible();
+  await page.getByTestId("done-close").click();
   await expect(summary(page)).toContainText("12:30");
+
+  // Run to the end: one record of what was done, which can be taken back.
   await page.getByTestId("start-button").click();
-  await expect(page.getByTestId("timer-overlay")).toContainText("12分30秒 / 休憩45秒");
+  await page.getByTestId("timer-skip").click();
+  await page.getByTestId("timer-skip").click();
+  await expect(page.getByTestId("cardio-recorded")).toContainText("12分30秒");
+  await page.getByTestId("cardio-undo").click();
+  await expect(page.getByTestId("cardio-undone")).toBeVisible();
+  await page.getByTestId("done-close").click();
+  await page.getByTestId("start-button").click();
+  await page.getByTestId("timer-skip").click();
+  await page.getByTestId("timer-skip").click();
+  await expect(page.getByTestId("cardio-recorded")).toContainText("12分30秒");
+  await page.getByTestId("done-close").click();
+  await card(page, "ランニング").click();
+  await expect(sheet.getByTestId("log-row")).toHaveCount(1);
+  await expect(sheet.getByTestId("log-row").first()).toContainText("12分30秒");
 });
 
 test("cardio shows the time left as live status for the lock screen and notification centre, and it can be turned off", async ({ page }) => {
@@ -1005,4 +1038,30 @@ test("recording: last time is on show, one tap adds to every set, and saving say
   // 62.5 x 11 x 3 = 2062.5 against 60 x 10 x 3 = 1800.
   await expect(page.getByTestId("toast")).toContainText("自己ベスト更新 62.5kg");
   await expect(page.getByTestId("toast")).toContainText("+15%");
+});
+
+test("a set's weight and reps copy to the next set with one tap", async ({ page }) => {
+  await page.evaluate(() => {
+    const exercises = [{ id: "m", name: "ベンチプレス", category: "chest", weight: 60, reps: 10, sets: 3 }];
+    localStorage.setItem("rep-timer", JSON.stringify({ state: { exercises, logs: [] }, version: 2 }));
+  });
+  await page.reload();
+  await card(page, "ベンチプレス").click();
+  const sheet = page.getByTestId("log-sheet");
+  await sheet.getByRole("textbox", { name: "1セット目の重量" }).fill("70");
+  await sheet.getByRole("textbox", { name: "1セット目の回数" }).fill("8");
+  // One button between each pair of sets, none under the last.
+  await expect(sheet.getByTestId("copy-down")).toHaveCount(2);
+  await sheet.getByLabel("1セット目の重量と回数を2セット目にコピー").click();
+  await expect(sheet.getByRole("textbox", { name: "2セット目の重量" })).toHaveValue("70");
+  await expect(sheet.getByRole("textbox", { name: "2セット目の回数" })).toHaveValue("8");
+  await expect(sheet.getByRole("textbox", { name: "3セット目の重量" })).toHaveValue("60");
+  await sheet.getByLabel("2セット目の重量と回数を3セット目にコピー").click();
+  await expect(sheet.getByRole("textbox", { name: "3セット目の回数" })).toHaveValue("8");
+  // It sits in the gap and covers no field.
+  const button = (await sheet.getByTestId("copy-down").first().boundingBox())!;
+  for (const name of ["2セット目の重量", "1セット目の重量"]) {
+    const field = (await sheet.getByRole("textbox", { name }).boundingBox())!;
+    expect(button.x + button.width <= field.x || button.y + button.height <= field.y || button.y >= field.y + field.height).toBe(true);
+  }
 });

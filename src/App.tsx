@@ -153,6 +153,11 @@ export default function App() {
         id={sheet?.type === "log" ? sheet.id : null}
         onClose={close}
         onEdit={(id) => setSheet({ type: "menu", id })}
+        onStart={(id) => {
+          useStore.getState().selectExercise(id);
+          close();
+          start();
+        }}
       />
       <PresetEditor open={sheet?.type === "preset"} id={sheet?.type === "preset" ? sheet.id : null} onClose={close} />
       <AccountSheet open={sheet?.type === "account"} onClose={close} />

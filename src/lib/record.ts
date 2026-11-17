@@ -1,6 +1,7 @@
 import { cardioRestSec, cardioSeconds, cardioWorkSec, formatMinSec, formatVolume, formatWeight, setsOf, volumeOf } from "./stats";
 import type { CategoryId, Unit } from "./catalog";
 import type { Exercise, LogEntry, SetEntry } from "./types";
+import type { Segment } from "./timer";
 
 import type { SetType } from "./types";
 
@@ -56,6 +57,33 @@ export function recordFeedback(history: LogEntry[], draft: Omit<LogEntry, "id" |
     parts.push(`前回比 ${sign}${formatVolume(Math.abs(volume - prevVolume), unit)} ${sign}${Math.round((Math.abs(volume - prevVolume) / prevVolume) * 100)}%`);
   }
   return parts.join(" · ") || null;
+}
+
+/** A cardio menu's timer settings from the time fields: changing them sets the timer, it records nothing. */
+export const cardioPlan = (c: CardioForm) => ({
+  reps: c.reps,
+  rest: c.rest,
+  sets: c.sets,
+  workSec: c.workSec || undefined,
+  restSec: c.restSec || undefined,
+});
+
+/**
+ * What a cardio timer run records: the plan when it ran to the end, else the work time actually done as one set.
+ * Null when it was stopped before any work.
+ */
+export function cardioRecord(segments: Segment[], doneMs: number, plan: CardioForm): CardioForm | null {
+  const total = segments.reduce((sum, s) => sum + s.ms, 0);
+  if (doneMs >= total) return plan;
+  let start = 0;
+  let work = 0;
+  for (const s of segments) {
+    if (s.phase === "work") work += Math.max(0, Math.min(s.ms, doneMs - start));
+    start += s.ms;
+  }
+  const sec = Math.floor(work / 1000);
+  if (sec <= 0) return null;
+  return { reps: Math.floor(sec / 60), rest: 0, sets: 1, ...(sec % 60 ? { workSec: sec % 60 } : {}) };
 }
 
 /** Interval-timer settings of a cardio menu (minutes and seconds → seconds). */
