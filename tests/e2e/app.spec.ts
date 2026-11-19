@@ -784,7 +784,7 @@ test("adding menus: the add button sits on its own band, never over the list", a
   expect(input.y + input.height).toBeLessThanOrEqual(band.y + 1);
 });
 
-test("menu cards show the full name and a one-line memo", async ({ page }) => {
+test("menu cards show the full name; the memo lives only in the record sheet", async ({ page }) => {
   await seedMenus(page);
   const long = "インクラインダンベルベンチプレス（ニュートラルグリップ・低角度）";
   await page.getByTestId("menu-add").click();
@@ -796,23 +796,22 @@ test("menu cards show the full name and a one-line memo", async ({ page }) => {
   // Not cut off: the text wraps instead of overflowing with an ellipsis.
   expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && getComputedStyle(el).textOverflow !== "ellipsis")).toBe(true);
 
-  // The memo is written in one place, the record sheet, and shows on the card; the menu editor has no second copy.
+  // The memo is the day's note: written and shown in one place, the record sheet. Not on the card, not in the editor.
   await openMenu(page, "スクワット");
   await page.getByTestId("log-sheet").getByTestId("memo-input").fill("膝はつま先と同じ向き");
   await closeSheet(page);
-  await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveText("膝はつま先と同じ向き");
+  await expect(card(page, "スクワット")).not.toContainText("膝はつま先と同じ向き");
   await openMenu(page, "スクワット");
+  await expect(page.getByTestId("log-sheet").getByTestId("memo-input")).toHaveValue("膝はつま先と同じ向き");
   await page.getByTestId("log-edit").click();
   const editor = page.getByTestId("menu-editor");
   await expect(editor).toBeVisible();
   await expect(editor.getByTestId("memo-input")).toHaveCount(0);
   await editor.getByTestId("sheet-footer").getByTestId("menu-save").click();
   await expect(editor).toBeHidden();
-  await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveText("膝はつま先と同じ向き");
   await openMenu(page, "スクワット");
-  await page.getByTestId("log-sheet").getByTestId("memo-input").fill("");
+  await expect(page.getByTestId("log-sheet").getByTestId("memo-input")).toHaveValue("膝はつま先と同じ向き");
   await closeSheet(page);
-  await expect(page.locator('[data-testid=menu-item][data-name="スクワット"] [data-testid=menu-memo]')).toHaveCount(0);
   await page.reload();
   await expect(card(page, "スクワット")).toBeVisible();
 });
@@ -850,8 +849,8 @@ test("a new day starts with an empty menu list; records stay and re-added menus 
   await item.click();
   await page.getByTestId("lib-submit").click();
   await expect(card(page, "ベンチプレス")).toContainText("70kg × 8 × 3");
-  await expect(page.locator('[data-testid=menu-item][data-name="ベンチプレス"] [data-testid=menu-memo]')).toHaveCount(0);
   await openMenu(page, "ベンチプレス");
+  await expect(page.getByTestId("log-sheet").getByTestId("memo-input")).toHaveValue("");
   await expect(page.getByTestId("log-sheet").getByTestId("log-row")).toHaveCount(1);
 });
 

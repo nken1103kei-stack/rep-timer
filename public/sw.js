@@ -1,5 +1,5 @@
 // Network-first for navigations and API, cache-first for hashed build assets.
-const CACHE = "reps-v3";
+const CACHE = "reps-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg"];
 
 self.addEventListener("install", (e) => {

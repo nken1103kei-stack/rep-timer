@@ -15,7 +15,6 @@ import {
   Plus,
   RotateCcw,
   Share2,
-  StickyNote,
   Trash2,
 } from "lucide-react";
 import { lastLogFor, lastSession, menuDayOf, useStore } from "../lib/store";
@@ -323,12 +322,6 @@ function MenuRow({
             </span>
             {last && <span>· {formatDate(last.at)}</span>}
           </div>
-          {ex.memo && (
-            <div className="mt-1 flex items-start gap-1 text-xs leading-snug font-semibold text-ink/70" data-testid="menu-memo">
-              <StickyNote size={12} className="mt-px shrink-0 text-mute" />
-              <span className="break-words">{ex.memo}</span>
-            </div>
-          )}
         </div>
         {/* Compact so the full menu name gets the width. */}
         <span className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-ink/5 px-1.5 py-1 text-[10px] leading-none font-bold text-ink/70">

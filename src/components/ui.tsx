@@ -533,20 +533,20 @@ export function SetRows({
               </motion.button>
             </div>
             {i < sets.length - 1 && (
-              // In the gap under the set label, so it covers no field: copies this set's weight and reps to the next.
-              <div className="relative h-0">
+              // Its own short row between sets, so it covers no field: copies this set's weight and reps to the next.
+              <div className="flex justify-start pt-1 pl-1">
                 <motion.button
                   type="button"
-                  whileTap={{ scale: 0.8 }}
+                  whileTap={{ scale: 0.9 }}
                   aria-label={`${i + 1}セット目の重量と回数を${i + 2}セット目にコピー`}
                   data-testid="copy-down"
                   onClick={() => {
                     haptic(8);
                     update(i + 1, { weight: set.weight, reps: set.reps });
                   }}
-                  className="absolute top-[-6px] left-8 z-10 grid size-5 -translate-x-1/2 place-items-center rounded-full bg-white text-mute shadow-sm ring-1 ring-slate-900/10 after:absolute after:-inset-2.5"
+                  className="relative flex h-6 items-center gap-1 rounded-full bg-accent/10 px-2.5 text-[11px] font-bold text-accent after:absolute after:-inset-y-2 after:inset-x-0"
                 >
-                  <ArrowDown size={12} strokeWidth={3} />
+                  <ArrowDown size={12} strokeWidth={3} /> 次のセットへコピー
                 </motion.button>
               </div>
             )}
