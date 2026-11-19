@@ -149,6 +149,6 @@ AdSense の審査に通ったら、`wrangler.jsonc` の `vars` に `ADSENSE_CLIE
 1. **TWA（Trusted Web Activity、推奨）**: [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) でこの PWA をそのまま Play ストア用 APK/AAB にできる。中身は Chrome なので Google ログインもそのまま動き、Web を更新すればアプリも更新される。
 2. **Capacitor**: 通知・バックグラウンドタイマーなどネイティブ機能が必要になったら `dist/client` を Capacitor で包む。この場合 WebView では Google Identity Services が使えないため、ネイティブの Google Sign-In プラグインで ID トークンを取得して同じ `/api/auth/google` に送る形にする（Worker 側は変更不要）。
 
-## スプレッドシート連携（予定）
+## スプレッドシート連携
 
-体重管理の Google スプレッドシートへの同期の方法と手順は [docs/spreadsheet-sync.md](docs/spreadsheet-sync.md) にまとめています。
+ログイン中は、記録を自分の Google スプレッドシート（体重・PFC 管理など）の「筋トレ記録」タブに数秒で書き込めます。追加・変更・削除がそのまま反映されます。設定は「設定」→「スプレッドシート連携」から行います。シート側の準備と仕組みは [docs/spreadsheet-sync.md](docs/spreadsheet-sync.md) を見てください。

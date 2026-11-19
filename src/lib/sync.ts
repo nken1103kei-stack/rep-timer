@@ -73,6 +73,16 @@ export async function refreshPlan() {
   }
 }
 
+export type SheetLinkStatus = { linked: boolean; url?: string; lastOkAt: number | null; lastError: string | null };
+
+/** Google Sheets link. Sending can take a while (Apps Script), so these wait longer than other calls. */
+const slow = () => AbortSignal.timeout(60_000);
+export const getSheetLink = () => api<SheetLinkStatus>("/sheets");
+export const saveSheetLink = (url: string, token: string) =>
+  api<SheetLinkStatus>("/sheets", { method: "PUT", body: JSON.stringify({ url, token }), signal: slow() });
+export const removeSheetLink = () => api<SheetLinkStatus>("/sheets", { method: "DELETE" });
+export const resendToSheet = () => api<SheetLinkStatus & { count: number }>("/sheets/resend", { method: "POST", signal: slow() });
+
 /** Opens Stripe Checkout (or the customer portal when already Pro). */
 export async function openBilling(kind: "checkout" | "portal") {
   const { url } = await api<{ url: string }>(`/billing/${kind}`, { method: "POST" });

@@ -4,6 +4,7 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { SESSION_COOKIE, SESSION_TTL_SEC, signSession, verifySession } from "./session";
 import { mergeSnapshots } from "../src/lib/merge";
+import { SHEET_URL, sheetDiff, toSheetRow, type SheetRow } from "../src/lib/sheetRows";
 import type { AppData } from "../src/lib/types";
 import { applyEvent, customerFor, isOwner, ownerList, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
 
@@ -101,6 +102,8 @@ app.post("/auth/logout", (c) => {
 // Everything below requires a session.
 app.use("/me", requireUser);
 app.use("/data", requireUser);
+app.use("/sheets", requireUser);
+app.use("/sheets/*", requireUser);
 app.use("/billing/checkout", requireUser);
 app.use("/billing/portal", requireUser);
 
@@ -182,6 +185,7 @@ app.post("/dev/login", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM subscriptions WHERE user_id = ?1").bind(id),
     c.env.DB.prepare("DELETE FROM user_data WHERE user_id = ?1").bind(id),
+    c.env.DB.prepare("DELETE FROM sheet_links WHERE user_id = ?1").bind(id),
   ]);
   await startSession(c, id);
   return c.json({ ok: true });
@@ -200,6 +204,21 @@ async function simulateWebhook(c: Context<AppEnv>, events: unknown[]) {
     );
   }
 }
+
+/** Stands in for the Apps Script web app in local tests: same request and reply, rows kept in memory. */
+const devSheet = new Map<string, SheetRow>();
+app.post("/dev/sheet", async (c) => {
+  const body = await c.req.json<{ token?: string } & Partial<SheetBody>>();
+  if (body.token !== "dev-sheet-token") return c.json({ ok: false, error: "unauthorized" });
+  for (const row of body.upserts ?? []) devSheet.set(row.id, row);
+  for (const id of body.deletes ?? []) devSheet.delete(id);
+  return c.json({ ok: true });
+});
+app.get("/dev/sheet", (c) => c.json({ rows: [...devSheet.values()] }));
+app.delete("/dev/sheet", (c) => {
+  devSheet.clear();
+  return c.json({ ok: true });
+});
 
 app.get("/dev/checkout", requireUser, async (c) => {
   const userId = c.get("userId");
@@ -245,7 +264,8 @@ app.put("/data", async (c) => {
     .bind(c.get("userId"))
     .first<{ data: string; updated_at: number }>();
   const incoming = { data: body.data as AppData, updatedAt: body.updatedAt };
-  const merged = row ? mergeSnapshots({ data: JSON.parse(row.data) as AppData, updatedAt: row.updated_at }, incoming) : incoming;
+  const before = row ? (JSON.parse(row.data) as AppData) : null;
+  const merged = before ? mergeSnapshots({ data: before, updatedAt: row!.updated_at }, incoming) : incoming;
   const json = JSON.stringify(merged.data);
   if (!row || json !== row.data || merged.updatedAt !== row.updated_at) {
     await c.env.DB.prepare(
@@ -254,8 +274,110 @@ app.put("/data", async (c) => {
     )
       .bind(c.get("userId"), json, merged.updatedAt)
       .run();
+    // Records reach the linked spreadsheet after the reply, so the app never waits on Google.
+    const diff = sheetDiff(before, merged.data);
+    if (diff.upserts.length || diff.deletes.length) later(c, sendChangesToSheet(c, c.get("userId"), diff));
   }
   return c.json({ ok: true, data: merged.data, updatedAt: merged.updatedAt });
+});
+
+// --- Spreadsheet link: the user's own Google Sheet receives their records (docs/spreadsheet-sync.md) ---
+
+type SheetLink = { url: string; token: string; last_ok_at: number | null; last_error: string | null };
+type SheetBody = { upserts: SheetRow[]; deletes: string[] };
+const SHEET_CHUNK = 500;
+
+const later = (c: Context<AppEnv>, p: Promise<unknown>) => {
+  try {
+    c.executionCtx.waitUntil(p);
+  } catch {
+    void p;
+  }
+};
+
+const sheetLinkOf = (c: Context<AppEnv>, userId: string) =>
+  c.env.DB.prepare("SELECT url, token, last_ok_at, last_error FROM sheet_links WHERE user_id = ?1").bind(userId).first<SheetLink>();
+
+/** Apps Script URLs only; locally also the stand-in below, for tests. */
+const sheetUrlOk = (c: Context<AppEnv>, url: string) => SHEET_URL.test(url) || (devMode(c) && url === new URL("/api/dev/sheet", c.req.url).href);
+
+/** Posts in chunks; returns an error message for the settings screen, or null when the sheet took everything. */
+async function postToSheet(link: SheetLink, body: SheetBody): Promise<string | null> {
+  const chunks: SheetBody[] = [];
+  for (let i = 0; i < Math.max(1, body.upserts.length); i += SHEET_CHUNK) {
+    chunks.push({ upserts: body.upserts.slice(i, i + SHEET_CHUNK), deletes: i === 0 ? body.deletes : [] });
+  }
+  try {
+    for (const chunk of chunks) {
+      // Apps Script answers with a redirect to the script's output; fetch follows it.
+      const res = await fetch(link.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: link.token, ...chunk }),
+        redirect: "follow",
+        signal: AbortSignal.timeout(25_000),
+      });
+      const reply = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (reply?.ok) continue;
+      if (reply?.error === "unauthorized") return "合言葉がスプレッドシートのスクリプトと一致しません";
+      if (!res.ok) return `スプレッドシートに届きませんでした (HTTP ${res.status})`;
+      return "スプレッドシートの応答を読めませんでした。デプロイの「アクセスできるユーザー」が「全員」か確認してください";
+    }
+    return null;
+  } catch {
+    return "スプレッドシートに接続できませんでした";
+  }
+}
+
+async function sendToSheet(c: Context<AppEnv>, userId: string, link: SheetLink, body: SheetBody) {
+  const error = await postToSheet(link, body);
+  await c.env.DB.prepare("UPDATE sheet_links SET last_ok_at = COALESCE(?2, last_ok_at), last_error = ?3 WHERE user_id = ?1")
+    .bind(userId, error ? null : Date.now(), error)
+    .run();
+  return error;
+}
+
+async function sendChangesToSheet(c: Context<AppEnv>, userId: string, body: SheetBody) {
+  const link = await sheetLinkOf(c, userId);
+  if (link) await sendToSheet(c, userId, link, body);
+}
+
+const sheetStatus = (link: SheetLink | null) =>
+  link ? { linked: true, url: link.url, lastOkAt: link.last_ok_at, lastError: link.last_error } : { linked: false, lastOkAt: null, lastError: null };
+
+app.get("/sheets", async (c) => c.json(sheetStatus(await sheetLinkOf(c, c.get("userId")))));
+
+/** Saves the link and sends an empty test, so a wrong URL or token shows up right away. */
+app.put("/sheets", async (c) => {
+  const { url = "", token = "" } = await c.req.json<{ url?: string; token?: string }>().catch(() => ({}) as { url?: string; token?: string });
+  if (!sheetUrlOk(c, url.trim())) return c.json({ error: "bad_url" }, 400);
+  if (token.length < 8 || token.length > 200) return c.json({ error: "bad_token" }, 400);
+  const userId = c.get("userId");
+  await c.env.DB.prepare(
+    `INSERT INTO sheet_links (user_id, url, token, last_ok_at, last_error, updated_at) VALUES (?1, ?2, ?3, NULL, NULL, ?4)
+     ON CONFLICT(user_id) DO UPDATE SET url = ?2, token = ?3, last_ok_at = NULL, last_error = NULL, updated_at = ?4`,
+  )
+    .bind(userId, url.trim(), token, Date.now())
+    .run();
+  const link = (await sheetLinkOf(c, userId))!;
+  await sendToSheet(c, userId, link, { upserts: [], deletes: [] });
+  return c.json(sheetStatus(await sheetLinkOf(c, userId)));
+});
+
+app.delete("/sheets", async (c) => {
+  await c.env.DB.prepare("DELETE FROM sheet_links WHERE user_id = ?1").bind(c.get("userId")).run();
+  return c.json(sheetStatus(null));
+});
+
+/** Every record again: rows are matched by record id, so this never duplicates anything. */
+app.post("/sheets/resend", async (c) => {
+  const userId = c.get("userId");
+  const link = await sheetLinkOf(c, userId);
+  if (!link) return c.json({ error: "not_linked" }, 400);
+  const row = await c.env.DB.prepare("SELECT data FROM user_data WHERE user_id = ?1").bind(userId).first<{ data: string }>();
+  const logs = row ? ((JSON.parse(row.data) as AppData).logs ?? []) : [];
+  await sendToSheet(c, userId, link, { upserts: logs.map(toSheetRow), deletes: [] });
+  return c.json({ ...sheetStatus(await sheetLinkOf(c, userId)), count: logs.length });
 });
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));

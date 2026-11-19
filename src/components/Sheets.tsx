@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
-import { Check, Crown, Download, Lock, LogOut, Pencil, Play, StickyNote, Trash2, Upload } from "lucide-react";
+import { Check, Crown, Download, Lock, LogOut, Pencil, Play, Sheet as SheetIcon, StickyNote, Trash2, Upload } from "lucide-react";
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
 import { exportCsv, importCsv } from "../lib/csv";
 import { CATEGORIES, DEFAULT_TEMPLATE, fromUnit, type CategoryId } from "../lib/catalog";
 import { cardioSeconds, formatDate, formatMinSec, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
 import { cardioPlan, initialRecord, recordFeedback, SET_TYPE, toLog, type RecordForm } from "../lib/record";
 import { showToast } from "../lib/toast";
-import { signInWithGoogle, signOut, usePro, useSession } from "../lib/sync";
+import { getSheetLink, removeSheetLink, resendToSheet, saveSheetLink, signInWithGoogle, signOut, usePro, useSession, type SheetLinkStatus } from "../lib/sync";
 import { buildSegments, formatDuration, formatTempo, totalMs, tutOf, type Tempo, type TimerKind } from "../lib/timer";
 import type { Exercise, LogEntry, Preset, SetEntry } from "../lib/types";
 import { haptic } from "../lib/feedback";
@@ -719,6 +719,7 @@ export function AccountSheet({ open, onClose }: { open: boolean; onClose: () => 
               {statusText}
               {syncedAt && status === "synced" && ` · ${new Date(syncedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`}
             </div>
+            <SheetLinkSection />
             <PrimaryButton tone="ghost" onClick={() => void signOut()} testId="logout">
               <LogOut size={16} /> ログアウト
             </PrimaryButton>
@@ -735,6 +736,116 @@ export function AccountSheet({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </div>
     </Sheet>
+  );
+}
+
+const GUIDE_URL = "https://github.com/nken1103kei-stack/rep-timer/blob/main/docs/spreadsheet-sync.md";
+
+/** Signed in: send records to the user's own Google Sheet through its Apps Script web app. */
+function SheetLinkSection() {
+  const [status, setStatus] = useState<SheetLinkStatus | null>(null);
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSheetLink()
+      .then((s) => {
+        setStatus(s);
+        if (s.url) setUrl(s.url);
+      })
+      .catch(() => setStatus({ linked: false, lastOkAt: null, lastError: null }));
+  }, []);
+
+  const run = async (task: () => Promise<SheetLinkStatus & { count?: number }>, done?: (s: SheetLinkStatus & { count?: number }) => string | null) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const s = await task();
+      setStatus(s);
+      setNote(s.lastError ? null : (done?.(s) ?? null));
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "";
+      setNote(code === "400" ? "URLは Apps Script の「ウェブアプリ」のURL（https://script.google.com/macros/s/…/exec）、合言葉は8文字以上にしてください" : "保存できませんでした。通信状態を確認してください");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const when = (ms: number) => new Date(ms).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const field = "w-full rounded-xl bg-white/80 px-3 py-2.5 text-sm font-semibold outline-none";
+
+  return (
+    <div className="glass space-y-2 rounded-2xl p-3" data-testid="sheet-link">
+      <div className="flex items-center gap-2 px-1 text-sm font-bold">
+        <SheetIcon size={16} /> スプレッドシート連携
+        <a href={GUIDE_URL} target="_blank" rel="noreferrer" className="ml-auto text-xs font-bold text-accent">
+          設定方法
+        </a>
+      </div>
+      <p className="px-1 text-xs font-semibold text-mute">記録すると数秒で、自分の Google スプレッドシートの「筋トレ記録」タブに書き込まれます。</p>
+      <input
+        type="url"
+        inputMode="url"
+        placeholder="ウェブアプリのURL（…/exec）"
+        aria-label="ウェブアプリのURL"
+        data-testid="sheet-url"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        className={field}
+      />
+      <input
+        type="password"
+        placeholder={status?.linked ? "合言葉（変更するときだけ入力）" : "合言葉（スクリプトの TOKEN と同じ）"}
+        aria-label="合言葉"
+        data-testid="sheet-token"
+        autoComplete="off"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        className={field}
+      />
+      <div className="px-1 text-xs font-bold" data-testid="sheet-status">
+        {status === null ? (
+          <span className="text-mute">確認中…</span>
+        ) : status.lastError ? (
+          <span className="text-danger">エラー: {status.lastError}</span>
+        ) : status.linked ? (
+          <span className="text-go">連携中{status.lastOkAt ? ` · 最後の送信 ${when(status.lastOkAt)}` : ""}</span>
+        ) : (
+          <span className="text-mute">未連携</span>
+        )}
+        {note && <div className="mt-1 text-mute">{note}</div>}
+      </div>
+      <PrimaryButton
+        tone="ink"
+        disabled={busy || !url || !token}
+        testId="sheet-save"
+        onClick={() => void run(() => saveSheetLink(url.trim(), token), () => "保存して、テスト送信に成功しました")}
+      >
+        {busy ? "送信中…" : "保存してテスト送信"}
+      </PrimaryButton>
+      {status?.linked && (
+        <div className="grid grid-cols-2 gap-2">
+          <PrimaryButton tone="ghost" disabled={busy} testId="sheet-resend" onClick={() => void run(resendToSheet, (s) => `${s.count ?? 0}件を送りました`)}>
+            全件を送り直す
+          </PrimaryButton>
+          <PrimaryButton
+            tone="danger"
+            disabled={busy}
+            testId="sheet-unlink"
+            onClick={() =>
+              void run(removeSheetLink, () => {
+                setToken("");
+                return "連携を解除しました。シートの行はそのまま残ります";
+              })
+            }
+          >
+            連携を解除
+          </PrimaryButton>
+        </div>
+      )}
+    </div>
   );
 }
 

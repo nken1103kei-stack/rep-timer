@@ -1065,3 +1065,50 @@ test("a set's weight and reps copy to the next set with one tap", async ({ page 
     expect(button.x + button.width <= field.x || button.y + button.height <= field.y || button.y >= field.y + field.height).toBe(true);
   }
 });
+
+test("records reach the linked spreadsheet: added, changed and deleted", async ({ page }) => {
+  const login = await page.request.post("/api/dev/login", { data: { id: "e2e-sheet", email: "sheet@example.test" } });
+  test.skip(login.status() === 404, "test sign-in and the stand-in sheet are only available locally");
+  await page.request.delete("/api/dev/sheet");
+  await page.reload();
+  const rows = async () => (await (await page.request.get("/api/dev/sheet")).json()).rows as { id: string; name: string; weightKg: number; volumeKg: number; category: string }[];
+
+  await page.getByTestId("account-button").click();
+  const link = page.getByTestId("sheet-link");
+  await expect(link.getByTestId("sheet-status")).toHaveText("未連携");
+  // Only an Apps Script web app URL is accepted, and a wrong token shows as an error.
+  await link.getByTestId("sheet-url").fill("https://example.com/collect");
+  await link.getByTestId("sheet-token").fill("dev-sheet-token");
+  await link.getByTestId("sheet-save").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("script.google.com");
+  const origin = new URL(page.url()).origin;
+  await link.getByTestId("sheet-url").fill(`${origin}/api/dev/sheet`);
+  await link.getByTestId("sheet-token").fill("wrong-token-1");
+  await link.getByTestId("sheet-save").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("合言葉");
+  await link.getByTestId("sheet-token").fill("dev-sheet-token");
+  await link.getByTestId("sheet-save").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("連携中");
+
+  // A record synced from the app becomes a row; an edit updates the same row; a deletion removes it.
+  const log = (weight: number) => ({ id: "s1", exerciseId: "m1", at: Date.now(), weight, reps: 10, sets: 3, name: "ベンチプレス", category: "chest" });
+  const put = (logs: unknown[], updatedAt: number, deletedLogs: string[] = []) =>
+    page.request.put("/api/data", { data: { data: { exercises: [], presets: [], customLibrary: [], unit: "kg", logs, deletedLogs }, updatedAt } });
+  await put([log(60)], Date.now());
+  await expect.poll(rows).toEqual([expect.objectContaining({ id: "s1", name: "ベンチプレス", category: "胸", weightKg: 60, volumeKg: 1800 })]);
+  await put([log(62.5)], Date.now() + 1);
+  await expect.poll(async () => (await rows()).map((r) => r.weightKg)).toEqual([62.5]);
+  await put([], Date.now() + 2, ["s1"]);
+  await expect.poll(rows).toEqual([]);
+
+  // Sending everything again never duplicates rows.
+  // (A deleted id stays deleted, so these are new records.)
+  await put([{ ...log(70), id: "s2" }, { ...log(80), id: "s3" }], Date.now() + 3);
+  await expect.poll(async () => (await rows()).length).toBe(2);
+  await link.getByTestId("sheet-resend").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("2件を送りました");
+  expect(await rows()).toHaveLength(2);
+
+  await link.getByTestId("sheet-unlink").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("未連携");
+});
