@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { animate, AnimatePresence, motion, useMotionValue } from "motion/react";
 import { Check, Crown, Download, Lock, LogOut, Pencil, Play, Sheet as SheetIcon, StickyNote, Trash2, Upload } from "lucide-react";
 import { DEFAULT_REST, uid, useStore } from "../lib/store";
@@ -7,7 +7,25 @@ import { CATEGORIES, DEFAULT_TEMPLATE, fromUnit, type CategoryId } from "../lib/
 import { cardioSeconds, formatDate, formatMinSec, formatSet, formatVolume, formatWeight, setsOf, volumeOf } from "../lib/stats";
 import { cardioPlan, initialRecord, recordFeedback, SET_TYPE, toLog, type RecordForm } from "../lib/record";
 import { showToast } from "../lib/toast";
-import { getSheetLink, removeSheetLink, resendToSheet, saveSheetLink, signInWithGoogle, signOut, usePro, useSession, type SheetLinkStatus } from "../lib/sync";
+import {
+  getSheetFeed,
+  getSheetLink,
+  googleSheetsToken,
+  makeSheetFeed,
+  removeSheetLink,
+  resendToSheet,
+  saveSheetLink,
+  selectGoogleSheet,
+  signInWithGoogle,
+  signOut,
+  startGoogleSheets,
+  stopSheetFeed,
+  takeSheetsReturn,
+  usePro,
+  useSession,
+  type SheetLinkStatus,
+} from "../lib/sync";
+import { pickSpreadsheet } from "../lib/picker";
 import { buildSegments, formatDuration, formatTempo, totalMs, tutOf, type Tempo, type TimerKind } from "../lib/timer";
 import type { Exercise, LogEntry, Preset, SetEntry } from "../lib/types";
 import { haptic } from "../lib/feedback";
@@ -741,24 +759,22 @@ export function AccountSheet({ open, onClose }: { open: boolean; onClose: () => 
 
 const GUIDE_URL = "https://github.com/nken1103kei-stack/rep-timer/blob/main/docs/spreadsheet-sync.md";
 
-/** Signed in: send records to the user's own Google Sheet through its Apps Script web app. */
+/**
+ * Signed in: records go to the user's own Google Sheet.
+ * The easy way is one Google consent, then pick a sheet (or make one); the server writes with the Sheets API.
+ * Also: a formula to paste (=IMPORTDATA), and the Apps Script web app for advanced users.
+ */
 function SheetLinkSection() {
+  const config = useSession((s) => s.sheets);
   const [status, setStatus] = useState<SheetLinkStatus | null>(null);
-  const [url, setUrl] = useState("");
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  useEffect(() => {
-    getSheetLink()
-      .then((s) => {
-        setStatus(s);
-        if (s.url) setUrl(s.url);
-      })
-      .catch(() => setStatus({ linked: false, lastOkAt: null, lastError: null }));
-  }, []);
-
-  const run = async (task: () => Promise<SheetLinkStatus & { count?: number }>, done?: (s: SheetLinkStatus & { count?: number }) => string | null) => {
+  const run = async (
+    task: () => Promise<SheetLinkStatus & { count?: number }>,
+    done?: (s: SheetLinkStatus & { count?: number }) => string | null,
+    badInput = "うまくいきませんでした。通信状態を確認して、もう一度お試しください",
+  ) => {
     setBusy(true);
     setNote(null);
     try {
@@ -767,24 +783,226 @@ function SheetLinkSection() {
       setNote(s.lastError ? null : (done?.(s) ?? null));
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
-      setNote(code === "400" ? "URLは Apps Script の「ウェブアプリ」のURL（https://script.google.com/macros/s/…/exec）、合言葉は8文字以上にしてください" : "保存できませんでした。通信状態を確認してください");
+      setNote(
+        code === "400" ? badInput : "うまくいきませんでした。通信状態を確認して、もう一度お試しください",
+      );
     } finally {
       setBusy(false);
     }
   };
 
+  const choose = () =>
+    run(
+      async () => {
+        const { accessToken } = await googleSheetsToken();
+        const id = await pickSpreadsheet(config.picker!, accessToken);
+        return id ? selectGoogleSheet(id) : getSheetLink();
+      },
+      (s) => (s.count !== undefined && s.title ? `「${s.title}」に${s.count}件を書き込みました` : null),
+    );
+
+  useEffect(() => {
+    getSheetLink()
+      .then((s) => {
+        setStatus(s);
+        // Back from Google with "pick an existing sheet": open the Picker right away.
+        if (takeSheetsReturn() === "pick" && s.pending && config.picker) void choose();
+      })
+      .catch(() => setStatus({ linked: false, lastOkAt: null, lastError: null }));
+  }, []);
+
+  const unlink = () => void run(removeSheetLink, () => "連携を解除しました。シートの行はそのまま残ります");
   const when = (ms: number) => new Date(ms).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const field = "w-full rounded-xl bg-white/80 px-3 py-2.5 text-sm font-semibold outline-none";
+  const google = status?.kind === "google";
+  const script = status?.kind === "script" && status.linked;
 
   return (
     <div className="glass space-y-2 rounded-2xl p-3" data-testid="sheet-link">
       <div className="flex items-center gap-2 px-1 text-sm font-bold">
         <SheetIcon size={16} /> スプレッドシート連携
         <a href={GUIDE_URL} target="_blank" rel="noreferrer" className="ml-auto text-xs font-bold text-accent">
-          設定方法
+          使い方
         </a>
       </div>
-      <p className="px-1 text-xs font-semibold text-mute">記録すると数秒で、自分の Google スプレッドシートの「筋トレ記録」タブに書き込まれます。</p>
+      <div className="px-1 text-xs font-bold" data-testid="sheet-status">
+        {status === null ? (
+          <span className="text-mute">確認中…</span>
+        ) : status.lastError ? (
+          <span className="text-danger">エラー: {status.lastError}</span>
+        ) : status.pending ? (
+          <span className="text-mute">Googleの許可は済みました。書き込むシートを選んでください</span>
+        ) : status.linked ? (
+          <span className="text-go">
+            {google && status.title ? `「${status.title}」に連携中` : "連携中"}
+            {status.lastOkAt ? ` · 最後の送信 ${when(status.lastOkAt)}` : ""}
+          </span>
+        ) : (
+          <span className="text-mute">未連携</span>
+        )}
+        {note && <div className="mt-1 text-mute">{note}</div>}
+      </div>
+
+      {google && status?.linked && (
+        <>
+          {status.url && (
+            <a href={status.url} target="_blank" rel="noreferrer" data-testid="sheet-open" className="block px-1 text-xs font-bold text-accent">
+              シートを開く
+            </a>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <PrimaryButton tone="ghost" disabled={busy} testId="sheet-resend" onClick={() => void run(resendToSheet, (s) => `${s.count ?? 0}件を送りました`)}>
+              全件を送り直す
+            </PrimaryButton>
+            <PrimaryButton tone="danger" disabled={busy} testId="sheet-unlink" onClick={unlink}>
+              連携を解除
+            </PrimaryButton>
+          </div>
+        </>
+      )}
+
+      {status?.pending && (
+        <div className="grid grid-cols-2 gap-2">
+          <PrimaryButton disabled={busy || !config.picker} testId="sheet-choose" onClick={() => void choose()}>
+            {busy ? "書き込み中…" : "シートを選ぶ"}
+          </PrimaryButton>
+          <PrimaryButton tone="danger" disabled={busy} testId="sheet-unlink" onClick={unlink}>
+            やめる
+          </PrimaryButton>
+        </div>
+      )}
+
+      {status && !status.linked && !status.pending && config.google && (
+        <>
+          <p className="px-1 text-xs font-semibold text-mute">
+            Googleで許可して、書き込むシートを選ぶだけです。記録すると数秒で、そのシートの「筋トレ記録」タブに入ります。REPS が触れるのは、選んだシートと REPS が作ったシートだけです。
+          </p>
+          {config.picker && (
+            <PrimaryButton testId="sheet-google-pick" onClick={() => startGoogleSheets("pick")}>
+              Googleで連携して、今あるシートを選ぶ
+            </PrimaryButton>
+          )}
+          <PrimaryButton tone={config.picker ? "ghost" : "accent"} testId="sheet-google-new" onClick={() => startGoogleSheets("new")}>
+            Googleで連携して、新しいシートを作る
+          </PrimaryButton>
+        </>
+      )}
+
+      <Fold label="かんたん連携: 数式を貼るだけ" testId="sheet-feed-toggle">
+        <SheetFeed />
+      </Fold>
+      <Fold label="上級者向け: Apps Script で連携" testId="sheet-script-toggle" initiallyOpen={script}>
+        <ScriptLink status={status} busy={busy} run={run} unlink={unlink} />
+      </Fold>
+    </div>
+  );
+}
+
+function Fold({ label, testId, initiallyOpen = false, children }: { label: string; testId: string; initiallyOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  useEffect(() => {
+    if (initiallyOpen) setOpen(true);
+  }, [initiallyOpen]);
+  return (
+    <div className="rounded-xl bg-white/50">
+      <button type="button" aria-expanded={open} data-testid={testId} onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-3 py-2.5 text-left text-xs font-bold text-ink/80">
+        {label}
+        <span className="text-mute">{open ? "閉じる" : "開く"}</span>
+      </button>
+      {open && <div className="space-y-2 px-3 pb-3">{children}</div>}
+    </div>
+  );
+}
+
+/** A private CSV address; pasting =IMPORTDATA("…") into any sheet shows every record. Not real time. */
+function SheetFeed() {
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getSheetFeed()
+      .then((r) => setUrl(r.url))
+      .catch(() => setUrl(null));
+  }, []);
+  const act = async (task: () => Promise<{ url: string | null }>) => {
+    setBusy(true);
+    try {
+      setUrl((await task()).url);
+    } catch {
+      showToast({ text: "うまくいきませんでした。通信状態を確認してください" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const formula = url ? `=IMPORTDATA("${url}")` : "";
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(formula);
+      showToast({ text: "数式をコピーしました" });
+    } catch {
+      showToast({ text: "コピーできませんでした。長押しで選んでコピーしてください" });
+    }
+  };
+
+  return (
+    <div className="space-y-2" data-testid="sheet-feed">
+      <p className="text-xs font-semibold text-mute">
+        Googleの許可は要りません。シートの空いたタブの A1 にこの数式を貼ると、全部の記録が表で入ります。Googleが自動で読み直すので、反映は1時間ほど遅れることがあります。
+      </p>
+      {url === undefined ? (
+        <div className="text-xs font-bold text-mute">確認中…</div>
+      ) : url ? (
+        <>
+          <code data-testid="sheet-feed-formula" className="block rounded-lg bg-white/80 px-2.5 py-2 text-[11px] font-semibold break-all select-all">
+            {formula}
+          </code>
+          <PrimaryButton tone="ink" disabled={busy} testId="sheet-feed-copy" onClick={() => void copy()}>
+            数式をコピー
+          </PrimaryButton>
+          <p className="text-xs font-semibold text-mute">このURLを知っている人は記録を読めます。人に見せてしまったら作り直してください。</p>
+          <div className="grid grid-cols-2 gap-2">
+            <PrimaryButton tone="ghost" disabled={busy} testId="sheet-feed-renew" onClick={() => void act(makeSheetFeed)}>
+              URLを作り直す
+            </PrimaryButton>
+            <PrimaryButton tone="danger" disabled={busy} testId="sheet-feed-stop" onClick={() => void act(stopSheetFeed)}>
+              止める
+            </PrimaryButton>
+          </div>
+        </>
+      ) : (
+        <PrimaryButton tone="ink" disabled={busy} testId="sheet-feed-make" onClick={() => void act(makeSheetFeed)}>
+          数式を作る
+        </PrimaryButton>
+      )}
+    </div>
+  );
+}
+
+/** Advanced: the user's own Apps Script web app (docs/spreadsheet-sync.md). */
+function ScriptLink({
+  status,
+  busy,
+  run,
+  unlink,
+}: {
+  status: SheetLinkStatus | null;
+  busy: boolean;
+  run: (
+    task: () => Promise<SheetLinkStatus & { count?: number }>,
+    done?: (s: SheetLinkStatus & { count?: number }) => string | null,
+    badInput?: string,
+  ) => Promise<void>;
+  unlink: () => void;
+}) {
+  const script = status?.kind === "script";
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  useEffect(() => {
+    if (script && status?.url) setUrl(status.url);
+  }, [script, status?.url]);
+  const field = "w-full rounded-xl bg-white/80 px-3 py-2.5 text-sm font-semibold outline-none";
+
+  return (
+    <>
+      <p className="text-xs font-semibold text-mute">シートに貼った Apps Script のウェブアプリへ送ります。手順は「使い方」にあります。</p>
       <input
         type="url"
         inputMode="url"
@@ -797,7 +1015,7 @@ function SheetLinkSection() {
       />
       <input
         type="password"
-        placeholder={status?.linked ? "合言葉（変更するときだけ入力）" : "合言葉（スクリプトの TOKEN と同じ）"}
+        placeholder={script ? "合言葉（変更するときだけ入力）" : "合言葉（スクリプトに書いたもの）"}
         aria-label="合言葉"
         data-testid="sheet-token"
         autoComplete="off"
@@ -805,27 +1023,21 @@ function SheetLinkSection() {
         onChange={(e) => setToken(e.target.value)}
         className={field}
       />
-      <div className="px-1 text-xs font-bold" data-testid="sheet-status">
-        {status === null ? (
-          <span className="text-mute">確認中…</span>
-        ) : status.lastError ? (
-          <span className="text-danger">エラー: {status.lastError}</span>
-        ) : status.linked ? (
-          <span className="text-go">連携中{status.lastOkAt ? ` · 最後の送信 ${when(status.lastOkAt)}` : ""}</span>
-        ) : (
-          <span className="text-mute">未連携</span>
-        )}
-        {note && <div className="mt-1 text-mute">{note}</div>}
-      </div>
       <PrimaryButton
         tone="ink"
         disabled={busy || !url || !token}
         testId="sheet-save"
-        onClick={() => void run(() => saveSheetLink(url.trim(), token), () => "保存して、テスト送信に成功しました")}
+        onClick={() =>
+          void run(
+            () => saveSheetLink(url.trim(), token),
+            () => "保存して、テスト送信に成功しました",
+            "URLは Apps Script の「ウェブアプリ」のURL（https://script.google.com/macros/s/…/exec）、合言葉は8文字以上にしてください",
+          )
+        }
       >
         {busy ? "送信中…" : "保存してテスト送信"}
       </PrimaryButton>
-      {status?.linked && (
+      {script && status?.linked && (
         <div className="grid grid-cols-2 gap-2">
           <PrimaryButton tone="ghost" disabled={busy} testId="sheet-resend" onClick={() => void run(resendToSheet, (s) => `${s.count ?? 0}件を送りました`)}>
             全件を送り直す
@@ -834,22 +1046,19 @@ function SheetLinkSection() {
             tone="danger"
             disabled={busy}
             testId="sheet-unlink"
-            onClick={() =>
-              void run(removeSheetLink, () => {
-                setToken("");
-                return "連携を解除しました。シートの行はそのまま残ります";
-              })
-            }
+            onClick={() => {
+              setToken("");
+              unlink();
+            }}
           >
             連携を解除
           </PrimaryButton>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-/** Pro: rest seconds after warm-up, working and drop sets. */
 function RestTimesSection() {
   const restTimes = useStore((s) => s.restTimes) ?? DEFAULT_REST;
   const setRestTimes = useStore((s) => s.setRestTimes);

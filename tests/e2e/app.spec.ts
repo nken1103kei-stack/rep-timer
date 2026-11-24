@@ -1065,7 +1065,7 @@ test("a set's weight and reps copy to the next set with one tap", async ({ page 
   }
 });
 
-test("records reach the linked spreadsheet: added, changed and deleted", async ({ page }) => {
+test("advanced: records reach an Apps Script spreadsheet: added, changed and deleted", async ({ page }) => {
   const login = await page.request.post("/api/dev/login", { data: { id: "e2e-sheet", email: "sheet@example.test" } });
   test.skip(login.status() === 404, "test sign-in and the stand-in sheet are only available locally");
   await page.request.delete("/api/dev/sheet");
@@ -1075,6 +1075,7 @@ test("records reach the linked spreadsheet: added, changed and deleted", async (
   await page.getByTestId("account-button").click();
   const link = page.getByTestId("sheet-link");
   await expect(link.getByTestId("sheet-status")).toHaveText("未連携");
+  await link.getByTestId("sheet-script-toggle").click();
   // Only an Apps Script web app URL is accepted, and a wrong token shows as an error.
   await link.getByTestId("sheet-url").fill("https://example.com/collect");
   await link.getByTestId("sheet-token").fill("dev-sheet-token");
@@ -1110,4 +1111,86 @@ test("records reach the linked spreadsheet: added, changed and deleted", async (
 
   await link.getByTestId("sheet-unlink").click();
   await expect(link.getByTestId("sheet-status")).toContainText("未連携");
+});
+
+test("easy spreadsheet link: one Google consent, then a new sheet or the user's own PFC sheet", async ({ page }) => {
+  const login = await page.request.post("/api/dev/login", { data: { id: "e2e-gsheet", email: "gsheet@example.test" } });
+  test.skip(login.status() === 404, "test sign-in and the stand-in Google are only available locally");
+  await page.request.delete("/api/dev/google/books");
+  const log = (id: string, weight: number) => ({ id, exerciseId: "m1", at: Date.now(), weight, reps: 10, sets: 3, name: "ベンチプレス", category: "chest" });
+  const put = (logs: unknown[], updatedAt: number, deletedLogs: string[] = []) =>
+    page.request.put("/api/data", { data: { data: { exercises: [], presets: [], customLibrary: [], unit: "kg", logs, deletedLogs }, updatedAt } });
+  await put([log("g1", 60)], Date.now());
+  const books = async () => (await (await page.request.get("/api/dev/google/books")).json()) as Record<string, { title: string; tabs: { title: string; rows: unknown[][] }[] }>;
+  const records = async (id: string) => (await books())[id]?.tabs.find((t) => t.title === "筋トレ記録")?.rows.map((r) => r[0]) ?? [];
+
+  await page.reload();
+  await page.getByTestId("account-button").click();
+  const link = page.getByTestId("sheet-link");
+  await expect(link.getByTestId("sheet-status")).toHaveText("未連携");
+  // No URL, no passphrase: one button, Google's consent, and back in the settings with a filled sheet.
+  await expect(link.getByTestId("sheet-url")).toBeHidden();
+  await link.getByTestId("sheet-google-new").click();
+  await expect(page.getByTestId("toast")).toContainText("スプレッドシートと連携しました");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(link.getByTestId("sheet-status")).toContainText("「REPS 筋トレ記録」に連携中");
+  await expect(link.getByTestId("sheet-open")).toHaveAttribute("href", /docs\.google\.com\/spreadsheets\/d\/made-/);
+  const made = Object.keys(await books()).find((id) => id.startsWith("made-"))!;
+  expect(await records(made)).toEqual(["記録ID", "g1"]);
+  // New records and deletions follow within seconds.
+  await put([log("g1", 60), log("g2", 70)], Date.now() + 1);
+  await expect.poll(() => records(made)).toEqual(["記録ID", "g1", "g2"]);
+  await put([log("g2", 70)], Date.now() + 2, ["g1"]);
+  await expect.poll(() => records(made)).toEqual(["記録ID", "g2"]);
+  await link.getByTestId("sheet-unlink").click();
+  await expect(link.getByTestId("sheet-status")).toHaveText(/^未連携/);
+
+  // Linking to the PFC sheet: the Picker opens on return; the records get their own tab, the weight tab is untouched.
+  await link.getByTestId("sheet-google-pick").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("「PFC管理」に連携中");
+  await expect(link.getByTestId("sheet-status")).toContainText("1件を書き込みました");
+  const pfc = (await books()).pfc;
+  expect(pfc.tabs.map((t) => t.title)).toEqual(["体重", "筋トレ記録"]);
+  expect(pfc.tabs[0].rows).toHaveLength(2);
+  expect(await records("pfc")).toEqual(["記録ID", "g2"]);
+  await link.getByTestId("sheet-resend").click();
+  await expect(link.getByTestId("sheet-status")).toContainText("1件を送りました");
+  expect(await records("pfc")).toEqual(["記録ID", "g2"]);
+  await link.getByTestId("sheet-unlink").click();
+  await expect(link.getByTestId("sheet-status")).toHaveText(/^未連携/);
+
+  // A forged return from Google is refused.
+  await page.goto("/api/sheets/google/callback?code=dev-code&state=forged");
+  await expect(page.getByTestId("toast")).toContainText("連携できませんでした");
+  await expect(page.getByTestId("sheet-link").getByTestId("sheet-status")).toHaveText("未連携");
+});
+
+test("easy spreadsheet link: a formula to paste, from a private address that can be renewed or stopped", async ({ page }) => {
+  const login = await page.request.post("/api/dev/login", { data: { id: "e2e-feed", email: "feed@example.test" } });
+  test.skip(login.status() === 404, "test sign-in is only available locally");
+  await page.request.put("/api/data", {
+    data: { data: { exercises: [], presets: [], customLibrary: [], unit: "kg", logs: [{ id: "f1", exerciseId: "m", at: Date.now(), weight: 60, reps: 10, sets: 3, name: "スクワット", category: "legs" }], deletedLogs: [] }, updatedAt: Date.now() },
+  });
+  await page.reload();
+  await page.getByTestId("account-button").click();
+  const link = page.getByTestId("sheet-link");
+  await link.getByTestId("sheet-feed-toggle").click();
+  await link.getByTestId("sheet-feed-make").click();
+  const formula = link.getByTestId("sheet-feed-formula");
+  await expect(formula).toHaveText(/^=IMPORTDATA\("http.+\/api\/feed\/[\w-]+\.csv"\)$/);
+  const url = (await formula.textContent())!.match(/"(.+)"/)![1];
+  const csv = await page.request.get(url);
+  expect(csv.headers()["content-type"]).toContain("text/csv");
+  const lines = (await csv.text()).trim().split(/\r?\n/);
+  expect(lines[0]).toBe("記録ID,日時,日付,種目,部位,重量(kg),回数,セット,総挙上(kg),有酸素(分)");
+  expect(lines[1]).toMatch(/^f1,.+,スクワット,脚,60,10,3,1800,0$/);
+  // Renewing retires the old address; stopping retires them all.
+  await link.getByTestId("sheet-feed-renew").click();
+  await expect(formula).not.toHaveText(`=IMPORTDATA("${url}")`);
+  expect((await page.request.get(url)).status()).toBe(404);
+  const renewed = (await formula.textContent())!.match(/"(.+)"/)![1];
+  expect((await page.request.get(renewed)).status()).toBe(200);
+  await link.getByTestId("sheet-feed-stop").click();
+  await expect(link.getByTestId("sheet-feed-make")).toBeVisible();
+  expect((await page.request.get(renewed)).status()).toBe(404);
 });

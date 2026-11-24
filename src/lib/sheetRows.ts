@@ -51,3 +51,31 @@ export function sheetDiff(before: Pick<AppData, "logs" | "deletedLogs"> | null, 
   const deletes = (after.deletedLogs ?? []).filter((id) => !wasDeleted.has(id));
   return { upserts, deletes };
 }
+
+/** The tab REPS writes to, and its header row. */
+export const SHEET_TAB = "筋トレ記録";
+export const SHEET_HEAD = ["記録ID", "日時", "日付", "種目", "部位", "重量(kg)", "回数", "セット", "総挙上(kg)", "有酸素(分)"];
+
+/** Japan time as the sheet reads a date and time, e.g. 2026/11/18 12:00. */
+export const sheetTime = (at: number) => {
+  const d = new Date(at + 9 * 3600_000).toISOString();
+  return `${d.slice(0, 4)}/${d.slice(5, 7)}/${d.slice(8, 10)} ${d.slice(11, 16)}`;
+};
+
+/** One row's cells. Text that a sheet would read as a formula is kept as text. */
+export function sheetCells(r: SheetRow): (string | number)[] {
+  const text = (s: string) => (/^[=+\-@]/.test(s) ? `'${s}` : s);
+  return [r.id, sheetTime(r.at), r.day, text(r.name), r.category, r.weightKg, r.reps, r.sets, r.volumeKg, r.cardioMin];
+}
+
+/** Every record as CSV for =IMPORTDATA(...), oldest first. */
+export function sheetCsv(logs: LogEntry[]): string {
+  const cell = (v: string | number) => {
+    const s = String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = [...logs].sort((a, b) => a.at - b.at).map(toSheetRow);
+  return [SHEET_HEAD, ...rows.map((r) => [r.id, sheetTime(r.at), r.day, r.name, r.category, r.weightKg, r.reps, r.sets, r.volumeKg, r.cardioMin])]
+    .map((row) => row.map(cell).join(","))
+    .join("\r\n") + "\r\n";
+}

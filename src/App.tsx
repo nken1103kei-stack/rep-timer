@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Copy, Undo2 } from "lucide-react";
 import { useStore } from "./lib/store";
-import { bootstrap, refreshPlan, useSession } from "./lib/sync";
+import { bootstrap, refreshPlan, setSheetsReturn, useSession } from "./lib/sync";
 import { unlockAudio } from "./lib/feedback";
 import { cardioTimer } from "./lib/record";
 import { hideToast, showToast, useToast } from "./lib/toast";
@@ -44,8 +44,17 @@ export default function App() {
 
   useEffect(() => {
     // Back from Stripe Checkout / the customer portal.
-    const back = new URLSearchParams(location.search).get("pro");
-    if (back) history.replaceState(null, "", location.pathname);
+    const params = new URLSearchParams(location.search);
+    const back = params.get("pro");
+    // Back from Google's consent screen for the spreadsheet link: reopen the settings where it left off.
+    const sheets = params.get("sheets");
+    if (back || sheets) history.replaceState(null, "", location.pathname);
+    if (sheets) {
+      setSheetsReturn(sheets);
+      setSheet({ type: "account" });
+      const text = { linked: "スプレッドシートと連携しました", denied: "Googleの許可がなかったため、連携していません", error: "連携できませんでした。もう一度お試しください" }[sheets];
+      if (text) showToast({ text });
+    }
     void bootstrap().then(async () => {
       if (back === "success" || back === "portal") await refreshPlan();
       if (back === "success" && useSession.getState().plan.pro) showToast({ text: "Pro になりました。ありがとうございます！" });
