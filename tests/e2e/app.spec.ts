@@ -1165,7 +1165,7 @@ test("easy spreadsheet link: one Google consent, then a new sheet or the user's 
   await expect(page.getByTestId("sheet-link").getByTestId("sheet-status")).toHaveText("未連携");
 });
 
-test("easy spreadsheet link: a formula to paste, from a private address that can be renewed or stopped", async ({ page }) => {
+test("easy spreadsheet link: a link URL to paste, one row per day, that can be renewed or stopped", async ({ page }) => {
   const login = await page.request.post("/api/dev/login", { data: { id: "e2e-feed", email: "feed@example.test" } });
   test.skip(login.status() === 404, "test sign-in is only available locally");
   await page.request.put("/api/data", {
@@ -1176,19 +1176,23 @@ test("easy spreadsheet link: a formula to paste, from a private address that can
   const link = page.getByTestId("sheet-link");
   await link.getByTestId("sheet-feed-toggle").click();
   await link.getByTestId("sheet-feed-make").click();
-  const formula = link.getByTestId("sheet-feed-formula");
-  await expect(formula).toHaveText(/^=IMPORTDATA\("http.+\/api\/feed\/[\w-]+\.csv"\)$/);
-  const url = (await formula.textContent())!.match(/"(.+)"/)![1];
+  const shown = link.getByTestId("sheet-feed-url");
+  await expect(shown).toHaveText(/^http.+\/api\/feed\/[\w-]+\.csv$/);
+  const url = (await shown.textContent())!;
+  await expect(link.getByTestId("sheet-feed-formula")).toHaveAttribute("data-formula", `=IMPORTDATA("${url}")`);
   const csv = await page.request.get(url);
   expect(csv.headers()["content-type"]).toContain("text/csv");
   const lines = (await csv.text()).trim().split(/\r?\n/);
-  expect(lines[0]).toBe("記録ID,日時,日付,種目,部位,重量(kg),回数,セット,総挙上(kg),有酸素(分)");
-  expect(lines[1]).toMatch(/^f1,.+,スクワット,脚,60,10,3,1800,0$/);
+  // The shape the PFC sheet reads: 日付 and セット数 are looked up by name.
+  expect(lines[0]).toBe("日付,セット数,総挙上量kg,有酸素分,種目");
+  expect(lines[1]).toMatch(/^\d{4}-\d{2}-\d{2},3,1800,0,スクワット$/);
+  const records = (await (await page.request.get(`${url}?view=records`)).text()).split(/\r?\n/);
+  expect(records[0]).toBe("記録ID,日時,日付,種目,部位,重量(kg),回数,セット,総挙上(kg),有酸素(分)");
   // Renewing retires the old address; stopping retires them all.
   await link.getByTestId("sheet-feed-renew").click();
-  await expect(formula).not.toHaveText(`=IMPORTDATA("${url}")`);
+  await expect(shown).not.toHaveText(url);
   expect((await page.request.get(url)).status()).toBe(404);
-  const renewed = (await formula.textContent())!.match(/"(.+)"/)![1];
+  const renewed = (await shown.textContent())!;
   expect((await page.request.get(renewed)).status()).toBe(200);
   await link.getByTestId("sheet-feed-stop").click();
   await expect(link.getByTestId("sheet-feed-make")).toBeVisible();

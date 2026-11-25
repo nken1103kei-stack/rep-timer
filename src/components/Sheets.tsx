@@ -887,7 +887,7 @@ function SheetLinkSection() {
         </>
       )}
 
-      <Fold label="かんたん連携: 数式を貼るだけ" testId="sheet-feed-toggle">
+      <Fold label="かんたん連携: 連携URLを貼るだけ" testId="sheet-feed-toggle">
         <SheetFeed />
       </Fold>
       <Fold label="上級者向け: Apps Script で連携" testId="sheet-script-toggle" initiallyOpen={script}>
@@ -913,7 +913,7 @@ function Fold({ label, testId, initiallyOpen = false, children }: { label: strin
   );
 }
 
-/** A private CSV address; pasting =IMPORTDATA("…") into any sheet shows every record. Not real time. */
+/** The link URL: a private CSV address, one row per day. Pasted into a sheet's link cell (=IMPORTDATA), it fills in. Not real time. */
 function SheetFeed() {
   const [url, setUrl] = useState<string | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -933,10 +933,10 @@ function SheetFeed() {
     }
   };
   const formula = url ? `=IMPORTDATA("${url}")` : "";
-  const copy = async () => {
+  const copy = async (text: string, done: string) => {
     try {
-      await navigator.clipboard.writeText(formula);
-      showToast({ text: "数式をコピーしました" });
+      await navigator.clipboard.writeText(text);
+      showToast({ text: done });
     } catch {
       showToast({ text: "コピーできませんでした。長押しで選んでコピーしてください" });
     }
@@ -945,18 +945,30 @@ function SheetFeed() {
   return (
     <div className="space-y-2" data-testid="sheet-feed">
       <p className="text-xs font-semibold text-mute">
-        Googleの許可は要りません。シートの空いたタブの A1 にこの数式を貼ると、全部の記録が表で入ります。Googleが自動で読み直すので、反映は1時間ほど遅れることがあります。
+        Googleの許可は要りません。連携URLをシートの「連携URL」欄に貼ると、日ごとのセット数・総挙上量・有酸素の分数・種目が入ります。Googleが自動で読み直すので、反映は1時間ほど遅れることがあります。
       </p>
       {url === undefined ? (
         <div className="text-xs font-bold text-mute">確認中…</div>
       ) : url ? (
         <>
-          <code data-testid="sheet-feed-formula" className="block rounded-lg bg-white/80 px-2.5 py-2 text-[11px] font-semibold break-all select-all">
-            {formula}
+          <code data-testid="sheet-feed-url" className="block rounded-lg bg-white/80 px-2.5 py-2 text-[11px] font-semibold break-all select-all">
+            {url}
           </code>
-          <PrimaryButton tone="ink" disabled={busy} testId="sheet-feed-copy" onClick={() => void copy()}>
-            数式をコピー
+          <PrimaryButton tone="ink" disabled={busy} testId="sheet-feed-copy" onClick={() => void copy(url, "連携URLをコピーしました")}>
+            連携URLをコピー
           </PrimaryButton>
+          <p className="text-xs font-semibold text-mute">
+            「連携URL」欄のないシートでは、空いたタブの A1 に数式を貼ります。
+            <button
+              type="button"
+              data-testid="sheet-feed-formula"
+              data-formula={formula}
+              onClick={() => void copy(formula, "数式をコピーしました")}
+              className="ml-1 font-bold text-accent"
+            >
+              数式をコピー
+            </button>
+          </p>
           <p className="text-xs font-semibold text-mute">このURLを知っている人は記録を読めます。人に見せてしまったら作り直してください。</p>
           <div className="grid grid-cols-2 gap-2">
             <PrimaryButton tone="ghost" disabled={busy} testId="sheet-feed-renew" onClick={() => void act(makeSheetFeed)}>
@@ -969,7 +981,7 @@ function SheetFeed() {
         </>
       ) : (
         <PrimaryButton tone="ink" disabled={busy} testId="sheet-feed-make" onClick={() => void act(makeSheetFeed)}>
-          数式を作る
+          連携URLを作る
         </PrimaryButton>
       )}
     </div>

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFakeGoogle } from "../../worker/fakeGoogle";
 import { accessToken, createSpreadsheet, exchangeCode, revoke, SheetError, sheetErrorText, writeRows } from "../../worker/googleSheets";
-import { sheetCells, sheetCsv, sheetTime, toSheetRow, SHEET_HEAD } from "../../src/lib/sheetRows";
+import { sheetCells, sheetCsv, sheetDailyCsv, sheetTime, toSheetRow, SHEET_HEAD } from "../../src/lib/sheetRows";
 import type { LogEntry } from "../../src/lib/types";
 
 const at = Date.UTC(2026, 10, 18, 3, 0); // 12:00 in Japan on 11/18
@@ -59,5 +59,23 @@ describe("cells and CSV", () => {
     expect(lines[0]).toBe(SHEET_HEAD.join(","));
     expect(lines[1]).toBe('a,2026/11/18 12:00,2026-11-18,"ワイド,""G""",胸,60,10,3,1800,0');
     expect(lines[2].startsWith("b,")).toBe(true);
+  });
+});
+
+describe("the link URL's daily summary", () => {
+  it("one row per day in the PFC sheet's shape: sets and volume of strength, cardio minutes, exercises", () => {
+    const run: LogEntry = { id: "r", exerciseId: "c", at: at + 60_000, weight: 0, reps: 20, workSec: 0, sets: 1, name: "ランニング", category: "cardio" };
+    const nextDay = { ...log("c", 50, "スクワット"), at: at + 86400_000 };
+    const csv = sheetDailyCsv([nextDay, log("a", 60), log("b", 70), run]);
+    expect(csv.trimEnd().split("\r\n")).toEqual([
+      "日付,セット数,総挙上量kg,有酸素分,種目",
+      "2026-11-18,6,3900,20,ベンチプレス・ランニング",
+      "2026-11-19,3,1500,0,スクワット",
+    ]);
+  });
+
+  it("a cardio-only day has 0 sets", () => {
+    const run: LogEntry = { id: "r", exerciseId: "c", at, weight: 0, reps: 30, workSec: 0, sets: 1, name: "バイク", category: "cardio" };
+    expect(sheetDailyCsv([run]).split("\r\n")[1]).toBe("2026-11-18,0,0,30,バイク");
   });
 });

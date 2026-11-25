@@ -151,4 +151,4 @@ AdSense の審査に通ったら、`wrangler.jsonc` の `vars` に `ADSENSE_CLIE
 
 ## スプレッドシート連携
 
-ログイン中は、記録を自分の Google スプレッドシート（体重・PFC 管理など）の「筋トレ記録」タブに入れられます。設定 →「スプレッドシート連携」で「Googleで連携」を押し、許可してシートを選ぶだけで、記録の追加・変更・削除が数秒で反映されます。Googleの許可なしで数式を貼るだけの「かんたん連携」と、上級者向けの Apps Script 方式もあります。使い方と、運営者が「Googleで連携」を有効にする設定は [docs/spreadsheet-sync.md](docs/spreadsheet-sync.md) を見てください。
+ログイン中は、記録を自分の Google スプレッドシート（体重・PFC 管理など）の「筋トレ記録」タブに入れられます。設定 →「スプレッドシート連携」で「Googleで連携」を押し、許可してシートを選ぶだけで、記録の追加・変更・削除が数秒で反映されます。Googleの許可なしで連携URLをシートに貼るだけの「かんたん連携」（1日1行のまとめ）と、上級者向けの Apps Script 方式もあります。使い方と、運営者が「Googleで連携」を有効にする設定は [docs/spreadsheet-sync.md](docs/spreadsheet-sync.md) を見てください。

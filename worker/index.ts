@@ -6,7 +6,7 @@ import { randomToken, seal, SESSION_COOKIE, SESSION_TTL_SEC, signSession, signSt
 import { accessToken, createSpreadsheet, exchangeCode, GOOGLE_AUTH_URL, realGoogle, revoke, SheetError, sheetErrorText, SHEETS_SCOPE, spreadsheetInfo, writeRows, type GoogleApi } from "./googleSheets";
 import { createFakeGoogle } from "./fakeGoogle";
 import { mergeSnapshots } from "../src/lib/merge";
-import { SHEET_URL, sheetCsv, sheetDiff, toSheetRow, type SheetRow } from "../src/lib/sheetRows";
+import { SHEET_URL, sheetCsv, sheetDailyCsv, sheetDiff, toSheetRow, type SheetRow } from "../src/lib/sheetRows";
 import type { AppData } from "../src/lib/types";
 import { applyEvent, customerFor, isOwner, ownerList, planFor, signStripePayload, stripe, verifyStripeSignature, type BillingEnv } from "./billing";
 
@@ -590,7 +590,9 @@ app.get("/feed/:file", async (c) => {
   if (!/^[\w-]{20,64}$/.test(token)) return c.json({ error: "not_found" }, 404);
   const row = await c.env.DB.prepare("SELECT user_id FROM sheet_feeds WHERE token = ?1").bind(token).first<{ user_id: string }>();
   if (!row) return c.json({ error: "not_found" }, 404);
-  return new Response(sheetCsv(await logsOf(c, row.user_id)), {
+  // One row per day by default (what PFC sheets read); ?view=records gives one row per record.
+  const logs = await logsOf(c, row.user_id);
+  return new Response(c.req.query("view") === "records" ? sheetCsv(logs) : sheetDailyCsv(logs), {
     headers: { "content-type": "text/csv; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
   });
 });

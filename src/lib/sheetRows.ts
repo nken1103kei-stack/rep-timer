@@ -69,13 +69,35 @@ export function sheetCells(r: SheetRow): (string | number)[] {
 }
 
 /** Every record as CSV for =IMPORTDATA(...), oldest first. */
+const csvCell = (v: string | number) => {
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+const toCsv = (rows: (string | number)[][]) => rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+
 export function sheetCsv(logs: LogEntry[]): string {
-  const cell = (v: string | number) => {
-    const s = String(v);
-    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
   const rows = [...logs].sort((a, b) => a.at - b.at).map(toSheetRow);
-  return [SHEET_HEAD, ...rows.map((r) => [r.id, sheetTime(r.at), r.day, r.name, r.category, r.weightKg, r.reps, r.sets, r.volumeKg, r.cardioMin])]
-    .map((row) => row.map(cell).join(","))
-    .join("\r\n") + "\r\n";
+  return toCsv([SHEET_HEAD, ...rows.map((r) => [r.id, sheetTime(r.at), r.day, r.name, r.category, r.weightKg, r.reps, r.sets, r.volumeKg, r.cardioMin])]);
+}
+
+/** The header of the daily summary; PFC sheets look columns up by these names. */
+export const DAILY_HEAD = ["日付", "セット数", "総挙上量kg", "有酸素分", "種目"];
+
+/**
+ * One row per training day for the link URL (=IMPORTDATA): strength sets and volume, cardio minutes, and the exercises.
+ * A day with cardio only has 0 sets, so a sheet can tell strength days apart.
+ */
+export function sheetDailyCsv(logs: LogEntry[]): string {
+  const days = new Map<string, { sets: number; volume: number; cardio: number; names: string[] }>();
+  for (const r of [...logs].sort((a, b) => a.at - b.at).map(toSheetRow)) {
+    const d = days.get(r.day) ?? { sets: 0, volume: 0, cardio: 0, names: [] };
+    if (r.category === "有酸素") d.cardio += r.cardioMin;
+    else {
+      d.sets += r.sets;
+      d.volume += r.volumeKg;
+    }
+    if (r.name && !d.names.includes(r.name)) d.names.push(r.name);
+    days.set(r.day, d);
+  }
+  return toCsv([DAILY_HEAD, ...[...days].map(([day, d]) => [day, d.sets, round1(d.volume), round1(d.cardio), d.names.join("・")])]);
 }
